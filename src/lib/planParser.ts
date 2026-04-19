@@ -62,9 +62,9 @@ export function parsePlannedCell(raw: string): PlannedSet | null {
   const rpeMatch = cell.match(/R(\d{1,2})/);
   const rpe = rpeMatch ? parseInt(rpeMatch[1], 10) : undefined;
 
-  // Detect special unit: "x4 trips", "3x20s", "3x30s/side"
+  // Detect special unit: "x4 trips" → distance (meters), "3x20s" → seconds
   let unit: PlannedSet["unit"] = "reps";
-  if (/trips?/i.test(cell)) unit = "trips";
+  if (/trips?/i.test(cell)) unit = "distance";
   if (/\b\d+s\b/.test(cell) || /\b\d+\s*sec/.test(cell)) unit = "seconds";
 
   // sets/reps patterns
@@ -80,7 +80,7 @@ export function parsePlannedCell(raw: string): PlannedSet | null {
     if (onlyTrips) {
       sets = 1;
       reps = parseInt(onlyTrips[1], 10);
-      unit = "trips";
+      unit = "distance";
     }
   }
 
@@ -100,7 +100,7 @@ function inferMetrics(name: string, anyPlanned: PlannedSet | null, blockName: st
   const lower = name.toLowerCase();
   const planned = anyPlanned;
   const isTime = planned?.unit === "seconds" || /plank|hold|carry|carries|zone\s*2|battle ropes/i.test(lower);
-  const isDistance = planned?.unit === "trips" || /sled|farmer/i.test(lower);
+  const isDistance = planned?.unit === "distance" || /sled|farmer/i.test(lower);
   const isBodyweight = /pull-?up|dip|push-?up|knee raise|dead bug|pallof|halos|swings?|cars/i.test(lower);
 
   const metrics = new Set<Metric>();

@@ -58,7 +58,7 @@ export default function Plan() {
       ]);
       setPlan((planRow?.parsed as unknown as ParsedPlan) ?? null);
       const map = new Map<string, LogRow[]>();
-      for (const l of (logsData ?? []) as LogRow[]) {
+      for (const l of ((logsData ?? []) as unknown as LogRow[])) {
         const key = (l.day_key ?? "").split("—")[0].trim();
         if (!key) continue;
         const arr = map.get(key) ?? [];
