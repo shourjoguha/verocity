@@ -197,8 +197,8 @@ function DayRail(props: {
 
       {active && (
         <div className="mt-3 border hairline p-5 animate-fade-in">
-          <div className="text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">{active.dayName}</div>
-          <h2 className="mt-1 font-display text-3xl tracking-[-0.04em]">{active.type}</h2>
+          <h2 className="font-display text-3xl tracking-[-0.04em]">{active.type}</h2>
+          <div className="mt-1 text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">{active.dayName}</div>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span>{active.exercises.length} movements</span>
             {lastByDay.get(active.dayName) && (
