@@ -105,11 +105,17 @@ export default function Plan() {
     });
   }
 
-  function reorderDays(from: number, to: number) {
+  /** Swap session contents between two weekday slots (day-of-week label stays put). */
+  function swapSessions(from: number, to: number) {
     if (from === to) return;
     mutatePlan((p) => {
-      const [moved] = p.days.splice(from, 1);
-      p.days.splice(to, 0, moved);
+      const a = p.days[from];
+      const b = p.days[to];
+      // Preserve dayName on each slot; swap everything else.
+      const aDay = a.dayName;
+      const bDay = b.dayName;
+      p.days[from] = { ...b, dayName: aDay };
+      p.days[to] = { ...a, dayName: bDay };
     });
   }
 
