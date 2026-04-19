@@ -1,65 +1,66 @@
 
 
-## Workout Logger — Plan
+## Logger & dashboard refinements
 
-A mobile-first, Swiss-minimalist workout logger for you and up to ~20 friends. Single global access key, per-user data, plan-driven sessions parsed from your Markdown.
+Seven targeted changes across Logger, Home, and the data layer. No new tables — extend `workout_logs` with two columns and adapt the existing `data` JSON shape; the metrics already live inside that JSON.
 
-### Access & users
-- Single global access key (entered once, stored locally) gates the whole app.
-- Lightweight per-user identity: pick/create a username on first entry. All logs, plans, and custom movements are scoped to that user.
-- "Switch user" + "Sign out" available from the home menu.
+### 1. Date picker on save
+Add a date control in the Logger header next to Week. Defaults to today. Uses shadcn `Popover` + existing `Calendar` component (`src/components/ui/calendar.tsx`). Selected date drives `log_date` on save (overriding the current "derive from startedAt" line). Visible at all times before finishing.
 
-### Core data model (minimal tables)
-1. `users` — id, display_name, created_at
-2. `movements` — shared library (seeded from your uploaded library file) + per-user customs (owner_user_id nullable = global). Fields: name, category, tags, default_metrics (weight/reps/rpe/distance/time), default_rest_seconds.
-3. `plans` — owner_user_id, name, start_date, end_date, parsed JSON (blocks → weeks → days → exercises with sets/reps/RPE/notations).
-4. `workout_logs` — owner_user_id, plan_id (nullable), date, started_at, ended_at, status (planned/in_progress/paused/done/cancelled), notes, structured JSON of groups → movements → sets (with metrics, rest, notation tags).
+### 2. In-app confirm dialogs (no `window.confirm`)
+Replace both `confirm(...)` calls in `Logger.tsx` (cancel session, restart timer) with shadcn `AlertDialog`. Same Swiss styling as the rest of the app — black border, hairline, no rounded pills. Add a small `useConfirm()` hook so we can reuse it for "Remove movement" and "Remove set" too.
 
-Per-user scoping enforced via RLS using a simple `current_user_id` context (set after username pick). No auth passwords beyond the global key.
+### 3. Swappable metric columns + always-on weight + meters/seconds
+- **Config update** (`src/config/app.config.ts`): change unit labels — `distance: "m"`, `time: "s"`, drop "trips" everywhere user-facing. Add a `swappableMetrics: ["reps","time","distance"]` group.
+- **LogItem shape**: ensure `metrics` always contains `"weight"`. `buildLogDocument` and `addMovement` enforce this; existing logs are migrated on load (one-line normalizer).
+- **Set storage** already keys by metric (`actual.weight`, `actual.reps`, …) so type+value is preserved — no DB schema change to the JSON shape needed beyond making sure each set carries the metric keys it uses.
+- **Swap UI**: column header in `SetRow`'s table becomes a popover button. Clicking the `REPS` / `TIME` / `DIST` header opens a 3-option chooser. Switching a column rewrites that movement's `metrics` array (replaces the old swappable metric with the new one) and clears stale values for the replaced metric across that movement's sets. Weight column is fixed and not swappable.
+- **Planned cell**: when the planned notation implies seconds ("3x20s") or trips/m, the column auto-picks the correct swappable metric on build.
 
-### Central config (single source of truth)
-A `src/config/app.config.ts` (TOML-style structure) holds: palette, typography, animation curves, metric definitions, default rest, notation glossary `(p)`, `(t)`, `+5%`, `→`, `/side`, RPE scale, block names, deload rules, timer behavior. Nothing hardcoded in components.
+### 4. Plan overview view (compressed table per day)
+New route `/plan` and a "Plan" tile on Home. Renders one collapsible table per `PlanDay` (Lower 1, Upper 1, …):
+- **Frozen first column** = movement name (sticky via `position: sticky; left: 0` inside an `overflow-x-auto` wrapper, with edge fade).
+- **No section column**: section is shown via a small left-edge accent bar + tooltip (Warm-up = light gray, Main = solid black bar, Secondary = mid-gray, Finisher = dashed). Defined in config under `blocks.sectionMarkers`.
+- **Columns** = W1…W16 with the planned `raw` string in each cell.
+- **Last completed week**: query the user's most recent `done` log, find its `week_number` for that day; that column is highlighted and shows actuals (best set: weight × reps) instead of planned. Other weeks remain compressed.
+- Accordion per day, collapsed by default; tap to expand.
 
-### Plan upload flow
-- Upload `.md` (or paste text).
-- Strict Markdown parser first (matches your sample's block table + per-day W1..W16 tables).
-- On failure, fall back to Lovable AI Gateway (edge function, structured tool-calling) to extract the same shape.
-- Review screen: confirm inferred sessions, primary metric per movement (auto-detected: weight+reps+RPE for mains, reps for bodyweight, time for planks/carries, distance/trips for sled), sets, notation tags. Edit then save.
+### 5. Scrollable session selector on Home
+Replace the single "today's session" card with a horizontal, snap-scrolling rail of all 7 plan days (condensed chips: day name + type). The chip matching today is auto-active. Tapping any chip expands it inline (smooth height transition) showing exercise count, last completion date, and a "Start workout" button. Out-of-sequence selection just routes to `/log/new?day=…&week=…` like today, so no Logger change required.
 
-### Views
-1. **Home** — today's session card, quick "Start workout", recent sessions, week strip. Persistent back + home buttons everywhere.
-2. **Logger** (the heart of the app):
-   - Compact accordion sections: Warm-up / Main / Secondary / Finisher.
-   - Each movement = a row in a tight table inside the accordion: set #, planned vs actual columns (weight, reps, RPE, distance, time — only the metrics that apply, others hidden).
-   - Inline notation chips (`p`, `t`, `+5%`, `/side`) editable via popover.
-   - **Long-press** to multi-select movements → group as superset/circuit, or break apart. Selected rows show a floating action bar (stays in place).
-   - **Rest timers**: manual-start, configurable per movement. Separate inter-movement rest (inside supersets) and post-set rest. Big readable timer, pause/resume/skip.
-   - **Session timer**: start / pause / resume / cancel / restart, with started/ended timestamps saved.
-   - Swap movement → opens library picker (search + filter by tag/category) or "Add custom".
-   - Smooth horizontal scroll for the set-metric table on narrow screens; vertical scroll for movement list. Subtle animated cues on scroll boundaries.
-3. **Calendar** — month view, dot per logged session, color intensity by session length/volume. Tap a day → session summary → open log to edit actuals.
-4. **Stats (Essentials)**:
-   - Per-movement weight & estimated 1RM trend
-   - Weekly total volume per movement category
-   - Session count + total time in gym per week
-   - Plan adherence: % of planned sets completed
-5. **Library** — browse shared library + your customs, edit defaults (primary metric, default rest, tags), add custom movement.
+### 6. Custom workout logger (define your own sections)
+On `/log/new` add a "Blank workout" entry path. New flow:
+- Logger accepts `?mode=custom`. `buildLogDocument` gets a sibling `buildBlankDocument()` returning an empty `LogDocument`.
+- Section list is editable: an "Add section" button at the bottom (input for name, e.g. "Main", "Finisher", "Skill"). Sections can be renamed (click title) and removed (popover). Section names are no longer constrained to the 4 hardcoded ones — `appConfig.blocks.sections` becomes only a default seed.
+- Add-movement flow inside each section already exists.
 
-### Style system (Swiss minimal, mobile-tuned)
-- Palette: bg `#f2f2f2`, text `#111111`, grays `#bfbfbf` → `#d9d9d9`, `#838282` for secondary text.
-- Type: Clash Display (headings, weight 700, tracking -0.05em, leading 0.9), Satoshi (body, 500). Loaded via Fontshare.
-- Echo effect on key page headers (4 layered repetitions with offsets).
-- 700ms `cubic-bezier(0.77, 0, 0.175, 1)` transitions; grayscale → color hover; subtle 1.05x scale.
-- No emojis. No icon clutter. Sharp borders, hairline dividers, tight spacing. Pop-out menus anchored in place (Radix popovers, no auto-close on scroll).
-- Compact tables inside accordions; minimal padding; horizontal scroll where needed with animated edge fades.
+### 7. Custom activity logging + activity tags
+- **Config**: add `activityTags: ["sport","recovery","mobility","strength","conditioning"]`.
+- **Schema migration**: `ALTER TABLE workout_logs ADD COLUMN activity_type text DEFAULT 'strength'` and `ADD COLUMN tags text[] DEFAULT '{}'`. (Two columns, no new tables.)
+- **Activity Logger**: a lightweight variant of Logger at `/log/activity`. Just a single form: title, tag picker (chips), date (uses #1 picker), duration (start/stop or manual minutes), notes. Saved to `workout_logs` with `data: {}`, `activity_type` set, `tags` populated.
+- **Auto-tag normal sessions**: when saving a plan-driven session, infer a tag from the day type ("Conditioning"/"Recovery" → conditioning; everything else → strength). Stored in `tags`.
+- Calendar/Stats read `tags` to color-code.
 
-### Backend
-- Lovable Cloud (Supabase) for tables + RLS.
-- Edge function `parse-plan` calls Lovable AI Gateway for the fallback parse with structured tool output.
-- All AI prompts live server-side.
+### Files touched
 
-### Out of scope for v1
-- Body metrics / weigh-in tracking
-- Multi-device sync conflict resolution beyond last-write-wins
-- Social/sharing features
+```text
+src/config/app.config.ts          metric units, swappable group, section markers, activity tags
+src/lib/types.ts                  LogDocument: allow free-form section names; LogItem ensure weight
+src/lib/logBuilder.ts             enforce weight metric; new buildBlankDocument()
+src/pages/Logger.tsx              date picker, AlertDialog confirms, swappable headers,
+                                  custom-section editing, mode=custom path
+src/pages/Home.tsx                horizontal scrollable day rail, "Plan" tile, "Blank workout"
+                                  + "Activity" entry points
+src/pages/Plan.tsx        (new)   compressed plan table view (4)
+src/pages/ActivityLogger.tsx (new) custom activity form (7)
+src/components/ConfirmDialog.tsx (new)  reusable AlertDialog wrapper + useConfirm()
+src/App.tsx                       routes: /plan, /log/activity
+supabase migration                add activity_type + tags columns to workout_logs
+```
+
+### Notes / risks
+
+- Existing logs load fine: weight column is added on read if missing; metric values are untouched.
+- The frozen-first-column trick works in Tailwind via `sticky left-0 bg-background z-10` on the `<th>`/`<td>` and `overflow-x-auto` on the wrapper. Already used elsewhere in shadcn table.
+- All choices stay config-driven — section names, activity tags, swappable metrics, section markers all live in `appConfig`.
 
