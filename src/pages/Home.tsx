@@ -193,7 +193,16 @@ type TimelinePoint = {
   state: "done" | "planned" | "rest" | "skipped";
   color: string;
   isToday: boolean;
+  label: string;
 };
+
+function abbrev(s: string): string {
+  // Strip vowels (lowercase only), keep caps + digits + first char, truncate to 5.
+  if (!s) return "";
+  const first = s[0];
+  const rest = s.slice(1).replace(/[aeiou\s\-_]/g, "");
+  return (first + rest).slice(0, 5);
+}
 
 function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
   const start = plan.start_date ? new Date(plan.start_date + "T00:00:00") : new Date();
@@ -229,13 +238,17 @@ function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
 
     let state: TimelinePoint["state"];
     let color: string;
+    let label: string;
 
     if (log) {
       state = "done";
       color = primaryTagColor(log.tags);
+      const dn = (log.day_key ?? "").split("—")[1]?.trim() ?? log.day_key ?? "Done";
+      label = abbrev(dn) || "Done";
     } else if (planDay) {
       const tag = appConfig.activity.dayTypeTag(planDay.type);
       color = appConfig.activity.tagColors[tag] ?? appConfig.activity.fallbackColor;
+      label = abbrev(planDay.type) || planDay.type.slice(0, 5);
       if (cursor.getTime() < today.getTime()) {
         state = "skipped";
       } else if (cursor.getTime() <= horizon.getTime()) {
@@ -246,9 +259,10 @@ function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
     } else {
       state = "rest";
       color = appConfig.activity.fallbackColor;
+      label = "Rest";
     }
 
-    points.push({ date: dateStr, state, color, isToday });
+    points.push({ date: dateStr, state, color, isToday, label });
     cursor.setDate(cursor.getDate() + 1);
   }
 
@@ -256,9 +270,11 @@ function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
 }
 
 function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const points = useMemo(() => buildTimeline(plan, logs), [plan, logs]);
   const todayIndex = points.findIndex((p) => p.isToday);
+  const [peekIndex, setPeekIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
