@@ -14,7 +14,205 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      app_settings: {
+        Row: {
+          access_key_hash: string
+          created_at: string
+          id: number
+        }
+        Insert: {
+          access_key_hash: string
+          created_at?: string
+          id?: number
+        }
+        Update: {
+          access_key_hash?: string
+          created_at?: string
+          id?: number
+        }
+        Relationships: []
+      }
+      app_users: {
+        Row: {
+          created_at: string
+          display_name: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          id?: string
+        }
+        Relationships: []
+      }
+      movements: {
+        Row: {
+          category: string | null
+          created_at: string
+          default_metrics: string[]
+          default_rest_seconds: number
+          id: string
+          name: string
+          notes: string | null
+          owner_user_id: string | null
+          primary_metric: string | null
+          tags: string[]
+          updated_at: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          default_metrics?: string[]
+          default_rest_seconds?: number
+          id?: string
+          name: string
+          notes?: string | null
+          owner_user_id?: string | null
+          primary_metric?: string | null
+          tags?: string[]
+          updated_at?: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          default_metrics?: string[]
+          default_rest_seconds?: number
+          id?: string
+          name?: string
+          notes?: string | null
+          owner_user_id?: string | null
+          primary_metric?: string | null
+          tags?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "movements_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plans: {
+        Row: {
+          created_at: string
+          end_date: string | null
+          id: string
+          is_active: boolean
+          name: string
+          owner_user_id: string
+          parsed: Json
+          source_markdown: string | null
+          start_date: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          owner_user_id: string
+          parsed: Json
+          source_markdown?: string | null
+          start_date?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          owner_user_id?: string
+          parsed?: Json
+          source_markdown?: string | null
+          start_date?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plans_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workout_logs: {
+        Row: {
+          created_at: string
+          data: Json
+          day_key: string | null
+          ended_at: string | null
+          id: string
+          log_date: string
+          notes: string | null
+          owner_user_id: string
+          plan_id: string | null
+          started_at: string | null
+          status: string
+          total_seconds: number | null
+          updated_at: string
+          week_number: number | null
+        }
+        Insert: {
+          created_at?: string
+          data?: Json
+          day_key?: string | null
+          ended_at?: string | null
+          id?: string
+          log_date?: string
+          notes?: string | null
+          owner_user_id: string
+          plan_id?: string | null
+          started_at?: string | null
+          status?: string
+          total_seconds?: number | null
+          updated_at?: string
+          week_number?: number | null
+        }
+        Update: {
+          created_at?: string
+          data?: Json
+          day_key?: string | null
+          ended_at?: string | null
+          id?: string
+          log_date?: string
+          notes?: string | null
+          owner_user_id?: string
+          plan_id?: string | null
+          started_at?: string | null
+          status?: string
+          total_seconds?: number | null
+          updated_at?: string
+          week_number?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workout_logs_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workout_logs_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
