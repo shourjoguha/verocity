@@ -218,21 +218,73 @@ export default function Logger() {
     setStatus("in_progress");
     sw.start();
   }
-  function finishSession() {
+  async function finishSession() {
     sw.pause();
+    const endIso = new Date().toISOString();
     setStatus("done");
-    setEndedAt(new Date().toISOString());
-    void saveLog(true);
+    setEndedAt(endIso);
+    if (!user || !doc) return;
+    dirtyRef.current = false;
+    const payload = {
+      owner_user_id: user.id,
+      plan_id: planId,
+      day_key: dayKey,
+      week_number: weekNumber || null,
+      status: "done",
+      started_at: startedAt,
+      ended_at: endIso,
+      total_seconds: accumSec,
+      data: doc as never,
+      log_date: format(logDate, "yyyy-MM-dd"),
+      activity_type: activityType,
+      tags,
+    };
+    if (logId) {
+      const { error } = await supabase.from("workout_logs").update(payload).eq("id", logId);
+      if (error) { toast.error("Save failed"); return; }
+    } else {
+      const { data, error } = await supabase.from("workout_logs").insert([payload]).select("id").single();
+      if (error || !data) { toast.error("Save failed"); return; }
+      setLogId(data.id);
+    }
+    setSavedTick((n) => n + 1);
+    toast.success("Saved");
   }
-  function saveAsDone() {
+  async function saveAsDone() {
     // Retroactive log: skip the timer entirely. Stamp start/end at noon of the log date.
+    if (!user || !doc) return;
     const noon = new Date(logDate);
     noon.setHours(12, 0, 0, 0);
     const iso = noon.toISOString();
-    setStartedAt((prev) => prev ?? iso);
+    const startIso = startedAt ?? iso;
+    dirtyRef.current = false;
+    const payload = {
+      owner_user_id: user.id,
+      plan_id: planId,
+      day_key: dayKey,
+      week_number: weekNumber || null,
+      status: "done",
+      started_at: startIso,
+      ended_at: iso,
+      total_seconds: accumSec,
+      data: doc as never,
+      log_date: format(logDate, "yyyy-MM-dd"),
+      activity_type: activityType,
+      tags,
+    };
+    if (logId) {
+      const { error } = await supabase.from("workout_logs").update(payload).eq("id", logId);
+      if (error) { toast.error("Save failed"); return; }
+    } else {
+      const { data, error } = await supabase.from("workout_logs").insert([payload]).select("id").single();
+      if (error || !data) { toast.error("Save failed"); return; }
+      setLogId(data.id);
+    }
+    setStartedAt(startIso);
     setEndedAt(iso);
     setStatus("done");
-    setTimeout(() => { void saveLog(true); nav("/"); }, 0);
+    toast.success("Saved as done");
+    nav("/");
   }
 
   // Mutators
