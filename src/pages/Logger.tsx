@@ -184,17 +184,20 @@ export default function Logger() {
   function resumeSession() { sw.start(); setStatus("in_progress"); }
   async function cancelSession() {
     const ok = await confirm({
-      title: "Cancel session?",
-      description: "It will be marked cancelled. Logged data is kept.",
-      confirmLabel: "Cancel session",
-      cancelLabel: "Keep going",
+      title: "Delete this session?",
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      cancelLabel: "Keep",
       destructive: true,
     });
     if (!ok) return;
     sw.pause();
-    setStatus("cancelled");
-    setEndedAt(new Date().toISOString());
-    void saveLog(true);
+    if (logId) {
+      const { error } = await supabase.from("workout_logs").delete().eq("id", logId);
+      if (error) { toast.error("Delete failed"); return; }
+    }
+    toast.success("Session deleted");
+    nav("/");
   }
   async function restartSession() {
     const ok = await confirm({
