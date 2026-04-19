@@ -224,6 +224,16 @@ export default function Logger() {
     setEndedAt(new Date().toISOString());
     void saveLog(true);
   }
+  function saveAsDone() {
+    // Retroactive log: skip the timer entirely. Stamp start/end at noon of the log date.
+    const noon = new Date(logDate);
+    noon.setHours(12, 0, 0, 0);
+    const iso = noon.toISOString();
+    setStartedAt((prev) => prev ?? iso);
+    setEndedAt(iso);
+    setStatus("done");
+    setTimeout(() => { void saveLog(true); nav("/"); }, 0);
+  }
 
   // Mutators
   function updateDoc(mut: (d: LogDocument) => void) {
@@ -564,6 +574,7 @@ export default function Logger() {
           onRestart={restartSession}
           onFinish={finishSession}
           onSave={() => saveLog(true)}
+          onSaveAsDone={saveAsDone}
         />
 
         <Accordion type="multiple" defaultValue={doc.sections.map((s) => s.id)} className="mt-6">
@@ -713,9 +724,9 @@ function SessionTimer(props: {
   startedAt: string | null;
   endedAt: string | null;
   onStart: () => void; onPause: () => void; onResume: () => void;
-  onCancel: () => void; onRestart: () => void; onFinish: () => void; onSave: () => void;
+  onCancel: () => void; onRestart: () => void; onFinish: () => void; onSave: () => void; onSaveAsDone: () => void;
 }) {
-  const { accumSec, status, onStart, onPause, onResume, onCancel, onRestart, onFinish, onSave } = props;
+  const { accumSec, status, onStart, onPause, onResume, onCancel, onRestart, onFinish, onSave, onSaveAsDone } = props;
   return (
     <section className="mt-4 border hairline p-3 flex items-center justify-between gap-3">
       <div className="flex items-baseline gap-3">
@@ -724,7 +735,10 @@ function SessionTimer(props: {
       </div>
       <div className="flex flex-wrap items-center gap-1">
         {status === "planned" && (
-          <button onClick={onStart} className="ll-btn flex items-center gap-1"><Play className="h-3 w-3" /> Start</button>
+          <>
+            <button onClick={onStart} className="ll-btn flex items-center gap-1"><Play className="h-3 w-3" /> Start</button>
+            <button onClick={onSaveAsDone} className="ll-btn" title="Skip timer, mark as done">Save as done</button>
+          </>
         )}
         {status === "in_progress" && (
           <>

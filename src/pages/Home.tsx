@@ -193,7 +193,16 @@ type TimelinePoint = {
   state: "done" | "planned" | "rest" | "skipped";
   color: string;
   isToday: boolean;
+  label: string;
 };
+
+function abbrev(s: string): string {
+  // Strip vowels (lowercase only), keep caps + digits + first char, truncate to 5.
+  if (!s) return "";
+  const first = s[0];
+  const rest = s.slice(1).replace(/[aeiou\s\-_]/g, "");
+  return (first + rest).slice(0, 5);
+}
 
 function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
   const start = plan.start_date ? new Date(plan.start_date + "T00:00:00") : new Date();
@@ -229,13 +238,17 @@ function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
 
     let state: TimelinePoint["state"];
     let color: string;
+    let label: string;
 
     if (log) {
       state = "done";
       color = primaryTagColor(log.tags);
+      const dn = (log.day_key ?? "").split("—")[1]?.trim() ?? log.day_key ?? "Done";
+      label = abbrev(dn) || "Done";
     } else if (planDay) {
       const tag = appConfig.activity.dayTypeTag(planDay.type);
       color = appConfig.activity.tagColors[tag] ?? appConfig.activity.fallbackColor;
+      label = abbrev(planDay.type) || planDay.type.slice(0, 5);
       if (cursor.getTime() < today.getTime()) {
         state = "skipped";
       } else if (cursor.getTime() <= horizon.getTime()) {
@@ -246,9 +259,10 @@ function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
     } else {
       state = "rest";
       color = appConfig.activity.fallbackColor;
+      label = "Rest";
     }
 
-    points.push({ date: dateStr, state, color, isToday });
+    points.push({ date: dateStr, state, color, isToday, label });
     cursor.setDate(cursor.getDate() + 1);
   }
 
@@ -256,9 +270,11 @@ function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
 }
 
 function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const points = useMemo(() => buildTimeline(plan, logs), [plan, logs]);
   const todayIndex = points.findIndex((p) => p.isToday);
+  const [peekIndex, setPeekIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -269,13 +285,27 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
     el.scrollTo({ left: Math.max(0, target), behavior: "auto" });
   }, [todayIndex]);
 
+  // Outside-click dismiss for the peek popover
+  useEffect(() => {
+    if (peekIndex === null) return;
+    function onPointerDown(e: PointerEvent) {
+      const root = containerRef.current;
+      if (!root) return;
+      if (!root.contains(e.target as Node)) setPeekIndex(null);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [peekIndex]);
+
+  const peek = peekIndex !== null ? points[peekIndex] : null;
+
   return (
-    <div className="border-b hairline pb-3">
+    <div ref={containerRef} className="border-b hairline pb-3 relative">
       <div className="text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground mb-2">Plan progress</div>
-      <div ref={scrollRef} className="-mx-4 px-4 overflow-x-auto edge-fade-x">
-        <div className="flex items-center gap-0.5 min-h-[28px]">
+      <div ref={scrollRef} className="-mx-4 px-4 overflow-x-auto edge-fade-x relative">
+        <div className="flex items-center gap-0.5 min-h-[28px] relative">
           {points.map((p, i) => {
-            const base = "w-1.5 h-6 shrink-0";
+            const base = "w-1.5 h-6 shrink-0 cursor-pointer relative";
             const style: React.CSSProperties = {};
             let cls = base;
             if (p.state === "done") {
@@ -295,7 +325,24 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
             if (p.isToday) {
               cls = cn(cls, "outline outline-1 outline-foreground outline-offset-1");
             }
-            return <div key={p.date + i} className={cls} style={style} aria-hidden />;
+            const isPeek = peekIndex === i;
+            return (
+              <button
+                key={p.date + i}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setPeekIndex((cur) => (cur === i ? null : i)); }}
+                className={cls}
+                style={style}
+                aria-label={`${p.date} ${p.label}`}
+              >
+                {isPeek && (
+                  <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 z-20 px-2 py-1 bg-foreground text-background text-[0.6rem] uppercase tracking-[0.12em] font-mono whitespace-nowrap pointer-events-none flex flex-col items-center gap-0.5">
+                    <span>{p.label}</span>
+                    <span className="text-background/60 normal-case tracking-normal text-[0.55rem]">{p.date}</span>
+                  </span>
+                )}
+              </button>
+            );
           })}
         </div>
       </div>
