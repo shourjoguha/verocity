@@ -12,8 +12,8 @@ export interface PlannedSet {
   rpe?: number;
   notations: Notation[];
   weightPctChange?: number; // +5%
-  /** primary value type that "reps" actually represents (reps | trips | seconds) */
-  unit?: "reps" | "trips" | "seconds";
+  /** primary value type that "reps" actually represents (reps | distance-meters | seconds) */
+  unit?: "reps" | "distance" | "seconds";
 }
 
 export interface PlanExercise {
@@ -83,6 +83,7 @@ export interface LogGroup {
 }
 export interface LogSection {
   id: string;
+  /** Free-form for custom workouts; one of appConfig.blocks.sections for plan-driven. */
   name: SectionName | string;
   groups: LogGroup[];
 }
