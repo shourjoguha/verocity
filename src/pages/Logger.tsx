@@ -579,17 +579,20 @@ export default function Logger() {
                     <GroupBlock
                       key={group.id}
                       section={section}
+                      allSections={doc.sections}
                       group={group}
                       selected={selected}
                       onSelectToggle={toggleSelect}
                       onSetActual={setActual}
                       onToggleComplete={toggleSetComplete}
+                      onToggleItemComplete={toggleItemComplete}
                       onAddSet={addSet}
                       onRemoveSet={removeSet}
                       onItemRest={setItemRest}
                       onGroupRest={setGroupRest}
                       onChangeKind={changeGroupKind}
                       onRemoveItem={removeItem}
+                      onMoveItem={moveItem}
                       onSwap={(g, i) => setPickerOpen({ kind: "swap", sectionId: section.id, groupId: g, itemIndex: i })}
                       onSwapMetric={swapMetric}
                       onToggleNotation={toggleNotation}
