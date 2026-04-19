@@ -185,10 +185,10 @@ function DayRail(props: {
                   isActive ? "bg-foreground text-background border-foreground" : "hairline hover:bg-secondary",
                 )}
               >
-                <div className={cn("text-[0.6rem] uppercase tracking-[0.14em]", isActive ? "text-background/70" : "text-muted-foreground")}>
+                <div className="font-display text-base tracking-[-0.04em] truncate">{d.type}</div>
+                <div className={cn("text-[0.6rem] uppercase tracking-[0.14em] mt-1", isActive ? "text-background/70" : "text-muted-foreground")}>
                   {d.dayName.slice(0, 3)}{isToday ? " · today" : ""}
                 </div>
-                <div className="font-display text-base tracking-[-0.04em] mt-1 truncate">{d.type}</div>
               </button>
             );
           })}
