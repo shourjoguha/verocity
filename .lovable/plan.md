@@ -1,71 +1,79 @@
 
 
-## Three refinements
+## Fix: "Save as done" not persisting status
 
-### 1. Save-without-start = retroactive log
+### Root cause
 
-**Logger.tsx**
+In `Logger.tsx`, `saveAsDone()` calls `setStatus("done")` / `setStartedAt` / `setEndedAt`, then schedules `saveLog(true)` via `setTimeout(0)` followed immediately by `nav("/")`. Two problems:
 
-- Add a **"Save as done"** button to the SessionTimer when `status === "planned"` (alongside "Start"). Clicking it:
-  - Sets `status = "done"`
-  - Sets `startedAt = endedAt = log_date at noon` (so it has a sensible timestamp)
-  - Leaves `total_seconds` as whatever was logged (likely 0 unless user set per-set times); since this is a retroactive log, that's expected
-  - Calls `saveLog(true)` and navigates home
-- Wire as `onSaveAsDone` prop on `SessionTimer`.
-- This means the user can fill in sets after the workout, hit "Save as done", and skip the timer entirely.
-- Bonus: when status is `done`, the **Home progress timeline** already classifies it as "done" → solid color bar. No extra work needed; the existing query (`status in ('done','in_progress')`) will pick it up immediately on next Home visit.
+1. **Stale closure** — `saveLog` reads `status`, `startedAt`, `endedAt` from the component's React state at the time the timeout fires. React state updates from `saveAsDone` aren't guaranteed flushed before the timeout callback, so the PATCH body still contains `"status":"planned"` (confirmed in the network log: `PATCH …status:"planned"`).
+2. **Nav races the await** — `nav("/")` runs synchronously after scheduling the save, unmounting the component while the PATCH is in flight.
 
-### 2. Plan-progress bar tap-to-peek
+DB confirms the row is still `status=planned`. That's why:
+- Calendar bar shows (it includes everything `≠ cancelled`) but the "This month" list label says `planned`.
+- Home recents (filters `in (done, in_progress)`) shows nothing.
+- Home progress timeline (same filter) shows the slot as planned/skipped instead of solid.
 
-**Home.tsx → ProgressTimeline**
+### Fix
 
-- Track `peekIndex: number | null` state.
-- Each bar becomes a `<button>` (not a `<div>`); clicking sets `peekIndex = i` (toggle off if same).
-- Render a small absolutely-positioned popover above the tapped bar:
-  - Width ~auto, padding `px-2 py-1`, `bg-foreground text-background text-[0.6rem] uppercase tracking-[0.12em] font-mono`
-  - Content: abbreviation derived from plan day type — `abbrev(type)` helper that strips vowels & lowercase, keeps caps + digits, then truncates to 5 chars (e.g. "Upper A" → "UppA", "Lower B" → "LwrB", "Conditioning" → "Cnd"). Falls back to "Rest" / done log's day_key.
-  - Date in even tinier muted line below.
-- Outside-click / touch-outside dismisses: attach a `useEffect` that listens to `pointerdown` on `document` and clears `peekIndex` if the target isn't inside the timeline container.
-- Pure visual; no navigation on tap (matches "no click handlers" intent but adds peek).
+Rewrite `saveAsDone` to bypass React state entirely and PATCH with explicit values, then navigate after the await resolves:
 
-### 3. Plan upload — format hint + adopt from other users
+```ts
+async function saveAsDone() {
+  if (!user || !doc) return;
+  const noon = new Date(logDate);
+  noon.setHours(12, 0, 0, 0);
+  const iso = noon.toISOString();
+  const payload = {
+    owner_user_id: user.id,
+    plan_id: planId,
+    day_key: dayKey,
+    week_number: weekNumber || null,
+    status: "done",
+    started_at: startedAt ?? iso,
+    ended_at: iso,
+    total_seconds: accumSec,
+    data: doc as never,
+    log_date: format(logDate, "yyyy-MM-dd"),
+    activity_type: activityType,
+    tags,
+  };
+  if (logId) {
+    const { error } = await supabase.from("workout_logs").update(payload).eq("id", logId);
+    if (error) { toast.error("Save failed"); return; }
+  } else {
+    const { data, error } = await supabase.from("workout_logs").insert([payload]).select("id").single();
+    if (error || !data) { toast.error("Save failed"); return; }
+  }
+  // Mirror state so any rendering before nav is consistent
+  setStatus("done");
+  setStartedAt(payload.started_at);
+  setEndedAt(payload.ended_at);
+  toast.success("Saved as done");
+  nav("/");
+}
+```
 
-**PlanUpload.tsx**
+Apply the same pattern (await before nav) to `finishSession` for consistency — currently `finishSession` calls `setStatus("done")` then `void saveLog(true)` without awaiting, suffering the same race when followed by navigation. Make it `async`, await `saveLog`, then nav.
 
-**a) Format hint inside textarea area**
-- Replace the bare `placeholder="Or paste markdown here..."` with: textarea kept, but below it (when textarea is empty) show a small **collapsible "See expected format"** disclosure. Click expands a code block showing a minimal example skeleton:
-  ```
-  # Plan title
-  **Start:** 2026-01-01
-  **End:** 2026-04-22
-  **Goal:** ...
+### One-time DB cleanup
 
-  ## Block Structure
-  | Block | Weeks | ... |
+The existing log `57005629-...` is stuck at `planned` even though the user's sets are filled in and they tapped "Save as done". After the code fix, future saves work — but this row needs to be flipped to `done` so the user sees it on Home/Recents immediately. Run a one-line migration:
 
-  ## Weekly Template
-  | Day | Type | Focus | Conditioning |
-
-  ## 16-Week Progression by Day
-  ### MONDAY — Lower A
-  | Block | Exercise | W1 | W2 | ... |
-  ```
-- Built as a `<details><summary>` with hairline border, mono text, neutral colors.
-
-**b) Adopt from other users**
-- New section under the format hint: **"Adopt an existing plan"** with a button "Browse plans".
-- Clicking opens a shadcn `Dialog` listing all `plans` rows from other users (`.neq("owner_user_id", user.id)`), select fields: `id, name, owner_user_id, parsed, start_date, end_date`. Join display name via existing `app_users` table by owner id.
-- List items show: plan name, owner display name, dates, day count. Click a row → expand inline to a **compact preview** (like the existing parsed preview but smaller — a 2-column grid of day cards with just `dayName` + `type` + exercise count; max-height with internal scroll).
-- "Adopt this plan" button inside the expanded preview → reads the source plan's `parsed` + `source_markdown`, calls the same `save()` path with the current user as owner, marks as active. Navigates home.
-- All inside a single `Dialog` — no new route. Closes on outside click (Radix default).
+```sql
+update public.workout_logs
+set status = 'done',
+    started_at = coalesce(started_at, (log_date::timestamp + interval '12 hours') at time zone 'UTC'),
+    ended_at   = coalesce(ended_at,   (log_date::timestamp + interval '12 hours') at time zone 'UTC')
+where id = '57005629-b01d-462c-9cb6-22f226f1a8e3';
+```
 
 ### Files touched
 
-```text
-src/pages/Logger.tsx        + "Save as done" button + handler
-src/pages/Home.tsx          ProgressTimeline: clickable bars, peek popover, outside-click
-src/pages/PlanUpload.tsx    format hint <details>, Adopt dialog with preview & adopt action
+```
+src/pages/Logger.tsx                          — rewrite saveAsDone, await finishSession
+supabase/migrations/<new>.sql                 — one-shot fix the stuck row
 ```
 
-No DB changes. RLS already allows reading other users' plans (open read policy on `plans`).
+No schema or RLS changes. Realtime subscription on `workout_logs` already added previously will push the corrected status to the open Home tab the moment the migration runs.
 
