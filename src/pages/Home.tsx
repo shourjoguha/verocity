@@ -285,13 +285,27 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
     el.scrollTo({ left: Math.max(0, target), behavior: "auto" });
   }, [todayIndex]);
 
+  // Outside-click dismiss for the peek popover
+  useEffect(() => {
+    if (peekIndex === null) return;
+    function onPointerDown(e: PointerEvent) {
+      const root = containerRef.current;
+      if (!root) return;
+      if (!root.contains(e.target as Node)) setPeekIndex(null);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [peekIndex]);
+
+  const peek = peekIndex !== null ? points[peekIndex] : null;
+
   return (
-    <div className="border-b hairline pb-3">
+    <div ref={containerRef} className="border-b hairline pb-3 relative">
       <div className="text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground mb-2">Plan progress</div>
-      <div ref={scrollRef} className="-mx-4 px-4 overflow-x-auto edge-fade-x">
-        <div className="flex items-center gap-0.5 min-h-[28px]">
+      <div ref={scrollRef} className="-mx-4 px-4 overflow-x-auto edge-fade-x relative">
+        <div className="flex items-center gap-0.5 min-h-[28px] relative">
           {points.map((p, i) => {
-            const base = "w-1.5 h-6 shrink-0";
+            const base = "w-1.5 h-6 shrink-0 cursor-pointer relative";
             const style: React.CSSProperties = {};
             let cls = base;
             if (p.state === "done") {
@@ -311,7 +325,24 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
             if (p.isToday) {
               cls = cn(cls, "outline outline-1 outline-foreground outline-offset-1");
             }
-            return <div key={p.date + i} className={cls} style={style} aria-hidden />;
+            const isPeek = peekIndex === i;
+            return (
+              <button
+                key={p.date + i}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setPeekIndex((cur) => (cur === i ? null : i)); }}
+                className={cls}
+                style={style}
+                aria-label={`${p.date} ${p.label}`}
+              >
+                {isPeek && (
+                  <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 z-20 px-2 py-1 bg-foreground text-background text-[0.6rem] uppercase tracking-[0.12em] font-mono whitespace-nowrap pointer-events-none flex flex-col items-center gap-0.5">
+                    <span>{p.label}</span>
+                    <span className="text-background/60 normal-case tracking-normal text-[0.55rem]">{p.date}</span>
+                  </span>
+                )}
+              </button>
+            );
           })}
         </div>
       </div>
