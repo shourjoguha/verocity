@@ -354,10 +354,7 @@ export default function Logger() {
           items: [item],
           restAfterRoundSeconds: item.restBetweenSetsSeconds,
         });
-        if (g.items.length <= 1 && g.kind !== "single") {
-          // Convert remainder back to single if only 1 left
-          if (g.items.length === 1) g.kind = "single";
-        }
+        if (g.items.length === 1) g.kind = "single";
       }
       // Remove empty groups
       for (const s of d.sections) s.groups = s.groups.filter((g) => g.items.length > 0);
