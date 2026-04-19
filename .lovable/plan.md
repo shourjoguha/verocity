@@ -1,66 +1,69 @@
 
 
-## Logger & dashboard refinements
+## 7-point logger & plan refinements
 
-Seven targeted changes across Logger, Home, and the data layer. No new tables — extend `workout_logs` with two columns and adapt the existing `data` JSON shape; the metrics already live inside that JSON.
+### 1. Number steppers on focus
+Wrap each set-input cell in a small component: when the input is **focused or hovered**, two stacked chevron buttons appear absolutely positioned on the right edge (▲▼). Click increments by metric-specific step (`weight`/`rpe` → 0.5, `reps`/`time`/`distance` → 1; long-press accelerates). Implemented inline in `SetRow` — no new file, ~30 lines.
 
-### 1. Date picker on save
-Add a date control in the Logger header next to Week. Defaults to today. Uses shadcn `Popover` + existing `Calendar` component (`src/components/ui/calendar.tsx`). Selected date drives `log_date` on save (overriding the current "derive from startedAt" line). Visible at all times before finishing.
+### 2. Movement-level "complete all" checkbox
+Add a checkbox at the right end of the **movement header row** (next to the `Settings2` gear in `ItemRow`). Indeterminate state when partially complete; clicking it sets `actual.completed` on every set in the movement (true if any incomplete, false if all complete). New mutator `toggleItemComplete` in `Logger.tsx`.
 
-### 2. In-app confirm dialogs (no `window.confirm`)
-Replace both `confirm(...)` calls in `Logger.tsx` (cancel session, restart timer) with shadcn `AlertDialog`. Same Swiss styling as the rest of the app — black border, hairline, no rounded pills. Add a small `useConfirm()` hook so we can reuse it for "Remove movement" and "Remove set" too.
+### 3. Swipe-left to reveal delete
+Replace the current "Remove" via popover with a **swipe-to-reveal delete** on each set row:
+- Each `<tr>` becomes wrapped in a `SwipeRow` div: `transform: translateX(-72px)` revealed when user drags left ≥40px, snapping to either 0 or -72px on release.
+- Behind the row: a dark suede red (`#6e1f1f`) panel with a white `X` icon, ~72px wide.
+- Clicking the X triggers `onRemove`. Tapping the row body snaps it back closed.
+- Touch + mouse drag handlers; uses pointer events (no library). Lives as a small component inside `Logger.tsx`.
 
-### 3. Swappable metric columns + always-on weight + meters/seconds
-- **Config update** (`src/config/app.config.ts`): change unit labels — `distance: "m"`, `time: "s"`, drop "trips" everywhere user-facing. Add a `swappableMetrics: ["reps","time","distance"]` group.
-- **LogItem shape**: ensure `metrics` always contains `"weight"`. `buildLogDocument` and `addMovement` enforce this; existing logs are migrated on load (one-line normalizer).
-- **Set storage** already keys by metric (`actual.weight`, `actual.reps`, …) so type+value is preserved — no DB schema change to the JSON shape needed beyond making sure each set carries the metric keys it uses.
-- **Swap UI**: column header in `SetRow`'s table becomes a popover button. Clicking the `REPS` / `TIME` / `DIST` header opens a 3-option chooser. Switching a column rewrites that movement's `metrics` array (replaces the old swappable metric with the new one) and clears stale values for the replaced metric across that movement's sets. Weight column is fixed and not swappable.
-- **Planned cell**: when the planned notation implies seconds ("3x20s") or trips/m, the column auto-picks the correct swappable metric on build.
+### 4. "Move to section" in movement filter
+In the existing per-movement settings popover (line 788), add a **"Move to…"** entry. Clicking it expands an inline submenu listing all sibling sections in this log (`doc.sections.map(...)`). Picking a section calls a new `moveItem(srcSectionId, groupId, itemIdx, dstSectionId)` mutator that pulls the item out (preserving its sets) and creates a new single-kind group in the destination.
 
-### 4. Plan overview view (compressed table per day)
-New route `/plan` and a "Plan" tile on Home. Renders one collapsible table per `PlanDay` (Lower 1, Upper 1, …):
-- **Frozen first column** = movement name (sticky via `position: sticky; left: 0` inside an `overflow-x-auto` wrapper, with edge fade).
-- **No section column**: section is shown via a small left-edge accent bar + tooltip (Warm-up = light gray, Main = solid black bar, Secondary = mid-gray, Finisher = dashed). Defined in config under `blocks.sectionMarkers`.
-- **Columns** = W1…W16 with the planned `raw` string in each cell.
-- **Last completed week**: query the user's most recent `done` log, find its `week_number` for that day; that column is highlighted and shows actuals (best set: weight × reps) instead of planned. Other weeks remain compressed.
-- Accordion per day, collapsed by default; tap to expand.
+### 5. Auto-suggest "Add set" after marking last set
+When the user toggles **complete on the last set** and the movement is **not** marked fully complete via the global checkbox (#2), append a **ghost row** under the table:
+- Greyed-out, dashed top border, compressed (~24px tall), text "+ add set" in muted color.
+- Clicking it calls existing `addSet`, which becomes a real row.
+- Disappears when the next set after it is added, or when #2 marks the movement complete.
+- Implemented via a derived `showGhostAdd` flag in `ItemRow`.
 
-### 5. Scrollable session selector on Home
-Replace the single "today's session" card with a horizontal, snap-scrolling rail of all 7 plan days (condensed chips: day name + type). The chip matching today is auto-active. Tapping any chip expands it inline (smooth height transition) showing exercise count, last completion date, and a "Start workout" button. Out-of-sequence selection just routes to `/log/new?day=…&week=…` like today, so no Logger change required.
+### 6. Plan editor
+Extend `src/pages/Plan.tsx` with an **Edit mode** toggle (button in the header). When on:
+- Each day card gets a drag handle (hamburger icon) → reorder via HTML5 drag-and-drop (`draggable`, `onDragStart/Over/Drop`). Persists to `plans.parsed.days` order.
+- Each table row gets edit affordances:
+  - Click movement name → inline rename
+  - Click any week cell → text input to edit the planned `raw` string (re-parsed via `parsePlannedCell` from `planParser.ts`)
+  - Trash icon at row end → remove exercise
+  - "+ Add movement" button under each day's table → opens existing `LibraryPicker` and appends a new `PlanExercise` with empty weeks
+- All mutations build a new `ParsedPlan` and `UPDATE plans SET parsed = $1` on save (debounced auto-save, same pattern as Logger).
 
-### 6. Custom workout logger (define your own sections)
-On `/log/new` add a "Blank workout" entry path. New flow:
-- Logger accepts `?mode=custom`. `buildLogDocument` gets a sibling `buildBlankDocument()` returning an empty `LogDocument`.
-- Section list is editable: an "Add section" button at the bottom (input for name, e.g. "Main", "Finisher", "Skill"). Sections can be renamed (click title) and removed (popover). Section names are no longer constrained to the 4 hardcoded ones — `appConfig.blocks.sections` becomes only a default seed.
-- Add-movement flow inside each section already exists.
+### 7. Auto-fill from last performance (per section)
+On Logger load, **after** `buildLogDocument` runs, for every item with a `movementId` (or by name match if no id), query:
+```sql
+select data from workout_logs
+where owner_user_id = $user
+  and status = 'done'
+  and data::text ilike '%movement-name%'
+order by log_date desc
+limit 20
+```
+Then in JS, walk the returned `LogDocument`s to find the **most recent set** of that same movement **inside a section whose name matches the current item's section name** (case-insensitive). Pre-fill `actual.weight` and `actual.reps` (or whichever swappable metric is active) on every set of the new item — but only on sets where `planned` doesn't already specify a value and where actual is empty. Mark these prefilled values visually as muted (italic, lighter color) so the user knows they're suggestions; first edit promotes them to normal.
 
-### 7. Custom activity logging + activity tags
-- **Config**: add `activityTags: ["sport","recovery","mobility","strength","conditioning"]`.
-- **Schema migration**: `ALTER TABLE workout_logs ADD COLUMN activity_type text DEFAULT 'strength'` and `ADD COLUMN tags text[] DEFAULT '{}'`. (Two columns, no new tables.)
-- **Activity Logger**: a lightweight variant of Logger at `/log/activity`. Just a single form: title, tag picker (chips), date (uses #1 picker), duration (start/stop or manual minutes), notes. Saved to `workout_logs` with `data: {}`, `activity_type` set, `tags` populated.
-- **Auto-tag normal sessions**: when saving a plan-driven session, infer a tag from the day type ("Conditioning"/"Recovery" → conditioning; everything else → strength). Stored in `tags`.
-- Calendar/Stats read `tags` to color-code.
+New helper file: `src/lib/lastPerformance.ts` exporting `prefillFromHistory(doc, history)`.
 
 ### Files touched
 
 ```text
-src/config/app.config.ts          metric units, swappable group, section markers, activity tags
-src/lib/types.ts                  LogDocument: allow free-form section names; LogItem ensure weight
-src/lib/logBuilder.ts             enforce weight metric; new buildBlankDocument()
-src/pages/Logger.tsx              date picker, AlertDialog confirms, swappable headers,
-                                  custom-section editing, mode=custom path
-src/pages/Home.tsx                horizontal scrollable day rail, "Plan" tile, "Blank workout"
-                                  + "Activity" entry points
-src/pages/Plan.tsx        (new)   compressed plan table view (4)
-src/pages/ActivityLogger.tsx (new) custom activity form (7)
-src/components/ConfirmDialog.tsx (new)  reusable AlertDialog wrapper + useConfirm()
-src/App.tsx                       routes: /plan, /log/activity
-supabase migration                add activity_type + tags columns to workout_logs
+src/pages/Logger.tsx          steppers (#1), item checkbox (#2), SwipeRow (#3),
+                              Move-to submenu (#4), ghost add-set (#5),
+                              prefill call on load (#7)
+src/pages/Plan.tsx            edit mode, drag-reorder days, inline cell edit,
+                              add/remove movement (#6)
+src/lib/lastPerformance.ts    new — query + prefill logic (#7)
+src/lib/types.ts              add `prefilled?: boolean` flag on LogSetActual
 ```
 
-### Notes / risks
-
-- Existing logs load fine: weight column is added on read if missing; metric values are untouched.
-- The frozen-first-column trick works in Tailwind via `sticky left-0 bg-background z-10` on the `<th>`/`<td>` and `overflow-x-auto` on the wrapper. Already used elsewhere in shadcn table.
-- All choices stay config-driven — section names, activity tags, swappable metrics, section markers all live in `appConfig`.
+### Notes
+- All values, steps, and section names stay sourced from `appConfig`.
+- No DB schema changes — plan edits write to existing `plans.parsed`, prefill reads existing `workout_logs.data`.
+- Swipe gesture works on touch + mouse; doesn't conflict with long-press multi-select (long-press fires on the header row, swipe on set rows).
+- Drag-and-drop uses native HTML5 (no new dep).
 
