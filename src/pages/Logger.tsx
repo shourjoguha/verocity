@@ -9,7 +9,7 @@
  *  - Swappable metric column headers (reps ↔ time ↔ distance)
  *  - Custom workout mode with editable section names
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { format } from "date-fns";
 import { TopBar } from "@/components/TopBar";
@@ -25,9 +25,10 @@ import { appConfig, type Metric, type SwappableMetric } from "@/config/app.confi
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil } from "lucide-react";
+import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil, ChevronUp, ChevronDown, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
+import { loadHistory, prefillFromHistory } from "@/lib/lastPerformance";
 import { cn } from "@/lib/utils";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
