@@ -1,5 +1,5 @@
 /** Home — horizontal day rail, recent logs, quick actions. */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
@@ -7,10 +7,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
 import { cn } from "@/lib/utils";
+import { appConfig } from "@/config/app.config";
 import type { ParsedPlan, PlanDay } from "@/lib/types";
 
 type LogRow = { id: string; log_date: string; day_key: string | null; status: string; total_seconds: number | null; tags: string[] | null };
-type PlanRow = { id: string; name: string; parsed: ParsedPlan; start_date: string | null; is_active: boolean };
+type PlanRow = { id: string; name: string; parsed: ParsedPlan; start_date: string | null; end_date: string | null; is_active: boolean };
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -22,23 +23,45 @@ function isoWeekIndexFromStart(startDateIso: string | null): number {
   return Math.max(1, Math.min(16, Math.floor(diffDays / 7) + 1));
 }
 
+function daysAgo(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.floor((today.getTime() - d.getTime()) / 86_400_000);
+  if (diff <= 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return `${diff} days ago`;
+}
+
+function ymd(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function primaryTagColor(tags: string[] | null): string {
+  const tag = (tags ?? []).find((t) => appConfig.activity.tagColors[t]);
+  return tag ? appConfig.activity.tagColors[tag] : appConfig.activity.fallbackColor;
+}
+
 export default function Home() {
   const nav = useNavigate();
   const { user } = useSession();
   const [plan, setPlan] = useState<PlanRow | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
+  const [allLogs, setAllLogs] = useState<LogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeDay, setActiveDay] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const [{ data: planData }, { data: logsData }] = await Promise.all([
-        supabase.from("plans").select("id,name,parsed,start_date,is_active").eq("owner_user_id", user.id).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags").eq("owner_user_id", user.id).order("log_date", { ascending: false }).limit(7),
+      const [{ data: planData }, { data: recentData }, { data: allLogsData }] = await Promise.all([
+        supabase.from("plans").select("id,name,parsed,start_date,end_date,is_active").eq("owner_user_id", user.id).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags").eq("owner_user_id", user.id).in("status", ["done", "in_progress"]).order("log_date", { ascending: false }).limit(5),
+        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags").eq("owner_user_id", user.id).neq("status", "cancelled").order("log_date", { ascending: false }),
       ]);
       setPlan((planData as unknown as PlanRow) ?? null);
-      setLogs((logsData as LogRow[]) ?? []);
+      setLogs((recentData as LogRow[]) ?? []);
+      setAllLogs((allLogsData as LogRow[]) ?? []);
       const todayName = DAY_NAMES[new Date().getDay()];
       setActiveDay(todayName);
       setLoading(false);
@@ -84,7 +107,8 @@ export default function Home() {
           </section>
         ) : (
           <section className="mt-8">
-            <div className="flex items-baseline justify-between mb-3">
+            <ProgressTimeline plan={plan} logs={allLogs} />
+            <div className="flex items-baseline justify-between mb-3 mt-6">
               <div className="text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">Pick a day</div>
               <button onClick={() => nav("/plan")} className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss">Plan overview →</button>
             </div>
@@ -106,21 +130,26 @@ export default function Home() {
           </div>
           <ul className="mt-3 border-y hairline divide-y hairline">
             {logs.length === 0 && <li className="py-4 text-xs text-muted-foreground uppercase tracking-[0.12em]">No sessions yet</li>}
-            {logs.map((l) => (
-              <li key={l.id}>
-                <button onClick={() => nav(`/log/${l.id}`)} className="w-full px-1 py-3 flex items-center justify-between hover:bg-secondary transition-colors duration-slow ease-swiss">
-                  <div className="flex items-baseline gap-3">
-                    <span className="font-mono text-xs text-muted-foreground">{l.log_date}</span>
-                    <span className="font-display text-base tracking-[-0.03em]">{l.day_key ?? "Session"}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {(l.tags ?? []).slice(0, 2).map((t) => <span key={t} className="chip">{t}</span>)}
-                    <span className="chip">{l.status}</span>
-                    <span className="text-xs font-mono text-muted-foreground">{l.total_seconds ? fmtLong(l.total_seconds) : "—"}</span>
-                  </div>
-                </button>
-              </li>
-            ))}
+            {logs.map((l) => {
+              const color = primaryTagColor(l.tags);
+              return (
+                <li key={l.id}>
+                  <button
+                    onClick={() => nav(`/log/${l.id}`)}
+                    className="w-full flex items-stretch gap-3 hover:bg-secondary transition-colors duration-slow ease-swiss text-left"
+                  >
+                    <span className="w-[3px] shrink-0" style={{ backgroundColor: color }} aria-hidden />
+                    <div className="flex-1 min-w-0 flex items-center justify-between gap-3 py-3 pr-1">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-display text-base tracking-[-0.03em] truncate">{l.day_key ?? "Session"}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{daysAgo(l.log_date)}</div>
+                      </div>
+                      <span className="text-xs font-mono text-muted-foreground shrink-0">{l.total_seconds ? fmtLong(l.total_seconds) : "—"}</span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </section>
 
@@ -156,6 +185,121 @@ export default function Home() {
         </section>
       </main>
     </>
+  );
+}
+
+type TimelinePoint = {
+  date: string;
+  state: "done" | "planned" | "rest" | "skipped";
+  color: string;
+  isToday: boolean;
+};
+
+function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
+  const start = plan.start_date ? new Date(plan.start_date + "T00:00:00") : new Date();
+  const end = plan.end_date
+    ? new Date(plan.end_date + "T00:00:00")
+    : new Date(start.getTime() + 16 * 7 * 86_400_000);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = ymd(today);
+  const horizon = new Date(today.getTime() + 10 * 86_400_000);
+
+  // Index logs by date (latest done log per date wins)
+  const logByDate = new Map<string, LogRow>();
+  for (const l of logs) {
+    if (l.status === "done" || l.status === "in_progress") {
+      if (!logByDate.has(l.log_date)) logByDate.set(l.log_date, l);
+    }
+  }
+
+  // Index plan days by day name
+  const planByDayName = new Map<string, PlanDay>();
+  for (const d of plan.parsed.days) planByDayName.set(d.dayName, d);
+
+  const points: TimelinePoint[] = [];
+  const cursor = new Date(start);
+  while (cursor.getTime() <= end.getTime()) {
+    const dateStr = ymd(cursor);
+    const dayName = DAY_NAMES[cursor.getDay()];
+    const planDay = planByDayName.get(dayName);
+    const log = logByDate.get(dateStr);
+    const isToday = dateStr === todayStr;
+
+    let state: TimelinePoint["state"];
+    let color: string;
+
+    if (log) {
+      state = "done";
+      color = primaryTagColor(log.tags);
+    } else if (planDay) {
+      const tag = appConfig.activity.dayTypeTag(planDay.type);
+      color = appConfig.activity.tagColors[tag] ?? appConfig.activity.fallbackColor;
+      if (cursor.getTime() < today.getTime()) {
+        state = "skipped";
+      } else if (cursor.getTime() <= horizon.getTime()) {
+        state = "planned";
+      } else {
+        state = "planned";
+      }
+    } else {
+      state = "rest";
+      color = appConfig.activity.fallbackColor;
+    }
+
+    points.push({ date: dateStr, state, color, isToday });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return points;
+}
+
+function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const points = useMemo(() => buildTimeline(plan, logs), [plan, logs]);
+  const todayIndex = points.findIndex((p) => p.isToday);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || todayIndex < 0) return;
+    // Each bar is 6px wide + 2px gap = 8px
+    const bw = 8;
+    const target = todayIndex * bw - el.clientWidth / 2;
+    el.scrollTo({ left: Math.max(0, target), behavior: "auto" });
+  }, [todayIndex]);
+
+  return (
+    <div className="border-b hairline pb-3">
+      <div className="text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground mb-2">Plan progress</div>
+      <div ref={scrollRef} className="-mx-4 px-4 overflow-x-auto edge-fade-x">
+        <div className="flex items-center gap-0.5 min-h-[28px]">
+          {points.map((p, i) => {
+            const base = "w-1.5 h-6 shrink-0";
+            const style: React.CSSProperties = {};
+            let cls = base;
+            if (p.state === "done") {
+              style.backgroundColor = p.color;
+            } else if (p.state === "planned") {
+              style.borderColor = p.color;
+              style.borderWidth = "1px";
+              style.borderStyle = "solid";
+              style.backgroundColor = "transparent";
+            } else if (p.state === "skipped") {
+              style.backgroundColor = "hsl(var(--muted))";
+            } else {
+              // rest
+              style.backgroundColor = "hsl(var(--muted))";
+              style.opacity = 0.4;
+            }
+            if (p.isToday) {
+              cls = cn(cls, "outline outline-1 outline-foreground outline-offset-1");
+            }
+            return <div key={p.date + i} className={cls} style={style} aria-hidden />;
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
