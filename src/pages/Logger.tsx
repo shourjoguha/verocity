@@ -99,7 +99,9 @@ export default function Logger() {
           sw.setSeconds(data.total_seconds ?? 0);
         }
       } else if (isCustomMode) {
-        setDoc(buildBlankDocument());
+        const blank = buildBlankDocument();
+        const history = await loadHistory(user.id);
+        setDoc(prefillFromHistory(blank, history));
         setDayKey("Custom workout");
         setWeekNumber(0);
         setActivityType("strength");
@@ -120,7 +122,8 @@ export default function Logger() {
         setDayKey(`${planDay.dayName} — ${planDay.type}`);
         setWeekNumber(week || isoWeekIndexFromStart(planRow.start_date));
         const built = buildLogDocument(plan, planDay, week || isoWeekIndexFromStart(planRow.start_date));
-        setDoc(built);
+        const history = await loadHistory(user.id);
+        setDoc(prefillFromHistory(built, history));
         const inferred = appConfig.activity.dayTypeTag(planDay.type);
         setActivityType(inferred);
         setTags([inferred]);
