@@ -1,69 +1,83 @@
 
 
-## 7-point logger & plan refinements
+## Calendar + plan reorder + cancel-delete refinements
 
-### 1. Number steppers on focus
-Wrap each set-input cell in a small component: when the input is **focused or hovered**, two stacked chevron buttons appear absolutely positioned on the right edge (▲▼). Click increments by metric-specific step (`weight`/`rpe` → 0.5, `reps`/`time`/`distance` → 1; long-press accelerates). Implemented inline in `SetRow` — no new file, ~30 lines.
+Four targeted changes. No schema changes.
 
-### 2. Movement-level "complete all" checkbox
-Add a checkbox at the right end of the **movement header row** (next to the `Settings2` gear in `ItemRow`). Indeterminate state when partially complete; clicking it sets `actual.completed` on every set in the movement (true if any incomplete, false if all complete). New mutator `toggleItemComplete` in `Logger.tsx`.
+### 1. Calendar: color-coded bars, hide cancelled, click-to-add
 
-### 3. Swipe-left to reveal delete
-Replace the current "Remove" via popover with a **swipe-to-reveal delete** on each set row:
-- Each `<tr>` becomes wrapped in a `SwipeRow` div: `transform: translateX(-72px)` revealed when user drags left ≥40px, snapping to either 0 or -72px on release.
-- Behind the row: a dark suede red (`#6e1f1f`) panel with a white `X` icon, ~72px wide.
-- Clicking the X triggers `onRemove`. Tapping the row body snaps it back closed.
-- Touch + mouse drag handlers; uses pointer events (no library). Lives as a small component inside `Logger.tsx`.
+**Bars**
+- Replace the single grayscale opacity bar with **colored bars derived from `tags[]`**, one stacked bar per tag (or the primary tag). Make them ~40% wider and a bit taller (`h-1.5`, full row width minus 2px).
+- Color map lives in `appConfig.activityTagColors` (new):
+  - `strength` → `#111111` (foreground/black)
+  - `conditioning` → `#d97706` (amber)
+  - `sport` → `#2563eb` (blue)
+  - `mobility` → `#16a34a` (green)
+  - `recovery` → `#7c3aed` (violet)
+  - fallback → `#737373` (muted)
+- Multiple sessions on one day → stacked thin bars (one per log, colored by its dominant tag).
+- Drop the "intensity = total time" opacity logic.
 
-### 4. "Move to section" in movement filter
-In the existing per-movement settings popover (line 788), add a **"Move to…"** entry. Clicking it expands an inline submenu listing all sibling sections in this log (`doc.sections.map(...)`). Picking a section calls a new `moveItem(srcSectionId, groupId, itemIdx, dstSectionId)` mutator that pulls the item out (preserving its sets) and creates a new single-kind group in the destination.
+**Hide cancelled**
+- Filter the Supabase query: `.neq("status", "cancelled")`. Cancelled logs no longer appear as dots/bars or in "This month" list.
+- (See #4 below — we're also making cancel a hard delete, so this filter is belt-and-suspenders.)
 
-### 5. Auto-suggest "Add set" after marking last set
-When the user toggles **complete on the last set** and the movement is **not** marked fully complete via the global checkbox (#2), append a **ghost row** under the table:
-- Greyed-out, dashed top border, compressed (~24px tall), text "+ add set" in muted color.
-- Clicking it calls existing `addSet`, which becomes a real row.
-- Disappears when the next set after it is added, or when #2 marks the movement complete.
-- Implemented via a derived `showGhostAdd` flag in `ItemRow`.
+**Click-to-add (forked menu)**
+- Every day cell becomes clickable (even empty ones).
+- If the day already has logs, clicking the cell area below the bars still opens the menu; clicking a bar opens the log (existing behavior preserved via separate hit area).
+- New `AddSessionMenu` component — a shadcn `Dialog` that walks two steps:
+  1. **Plan vs Activity** (two big buttons).
+  2. If **Plan** → list of plan days from active plan + a "Custom (blank)" option.
+     If **Activity** → grid of tags from `appConfig.activityTags` + "Custom".
+- On pick, route to existing flows with a `?date=YYYY-MM-DD` query param:
+  - Plan day → `/log/new?day=<key>&week=<n>&date=<ymd>`
+  - Custom plan → `/log/new?mode=custom&date=<ymd>`
+  - Activity tag → `/log/activity?tag=<tag>&date=<ymd>`
+  - Custom activity → `/log/activity?date=<ymd>`
+- `Logger.tsx` and `ActivityLogger.tsx` read `?date` and seed the date picker (already present from earlier work).
 
-### 6. Plan editor
-Extend `src/pages/Plan.tsx` with an **Edit mode** toggle (button in the header). When on:
-- Each day card gets a drag handle (hamburger icon) → reorder via HTML5 drag-and-drop (`draggable`, `onDragStart/Over/Drop`). Persists to `plans.parsed.days` order.
-- Each table row gets edit affordances:
-  - Click movement name → inline rename
-  - Click any week cell → text input to edit the planned `raw` string (re-parsed via `parsePlannedCell` from `planParser.ts`)
-  - Trash icon at row end → remove exercise
-  - "+ Add movement" button under each day's table → opens existing `LibraryPicker` and appends a new `PlanExercise` with empty weeks
-- All mutations build a new `ParsedPlan` and `UPDATE plans SET parsed = $1` on save (debounced auto-save, same pattern as Logger).
+### 2. Plan editor: drag the session, not the day label
 
-### 7. Auto-fill from last performance (per section)
-On Logger load, **after** `buildLogDocument` runs, for every item with a `movementId` (or by name match if no id), query:
-```sql
-select data from workout_logs
-where owner_user_id = $user
-  and status = 'done'
-  and data::text ilike '%movement-name%'
-order by log_date desc
-limit 20
-```
-Then in JS, walk the returned `LogDocument`s to find the **most recent set** of that same movement **inside a section whose name matches the current item's section name** (case-insensitive). Pre-fill `actual.weight` and `actual.reps` (or whichever swappable metric is active) on every set of the new item — but only on sets where `planned` doesn't already specify a value and where actual is empty. Mark these prefilled values visually as muted (italic, lighter color) so the user knows they're suggestions; first edit promotes them to normal.
+Currently `Plan.tsx` reorders `parsed.days[]` directly, which moves the day label (Mon/Tue/…) along with the session.
 
-New helper file: `src/lib/lastPerformance.ts` exporting `prefillFromHistory(doc, history)`.
+- Treat the **day-of-week label as a fixed positional slot**. The draggable payload is the **session** (`PlanDay` minus its `dayOfWeek`/label).
+- Implementation: keep `parsed.days[]` ordered by weekday slot (Sun…Sat). Drag-and-drop swaps the **session contents** (everything except the `day` field) between two slots. So dropping "Lower A" from Monday onto Sunday makes Sunday="Lower A" and Monday=whatever Sunday had.
+- Empty slots (rest days) become valid drop targets — drop a session there and the source slot becomes empty/rest.
+
+### 3. Plan editor: swap header / subheader
+
+In `Plan.tsx` day card header:
+- Currently: bold = day-of-week (`Sunday`), subheader = session name (`Lower A`).
+- Switch to: **bold session name** (`Lower A`) as the primary, **muted day-of-week** (`Sunday`) as the subheader below/beside it in `text-muted-foreground text-xs uppercase tracking-[0.12em]`.
+- Same change in the Home day-rail chips for consistency.
+
+### 4. Cancel = permanent delete
+
+- In `Logger.tsx`, the existing "Cancel session" confirm currently flips `status='cancelled'`. Change it to:
+  - `await supabase.from("workout_logs").delete().eq("id", logId)`
+  - Then `nav("/")`.
+- Update the confirm dialog copy: "Delete this session? This cannot be undone."
+- Remove all "cancelled" rendering paths (Calendar list, Stats, Home recents) since the row no longer exists. The `.neq("status","cancelled")` filter on Calendar stays as a safety net for any historical cancelled rows.
+- One-time cleanup query on Calendar load: leave existing cancelled rows alone (user can manually clean later); the filter hides them.
 
 ### Files touched
 
 ```text
-src/pages/Logger.tsx          steppers (#1), item checkbox (#2), SwipeRow (#3),
-                              Move-to submenu (#4), ghost add-set (#5),
-                              prefill call on load (#7)
-src/pages/Plan.tsx            edit mode, drag-reorder days, inline cell edit,
-                              add/remove movement (#6)
-src/lib/lastPerformance.ts    new — query + prefill logic (#7)
-src/lib/types.ts              add `prefilled?: boolean` flag on LogSetActual
+src/config/app.config.ts          + activityTagColors map
+src/pages/Calendar.tsx            colored stacked bars, hide cancelled,
+                                  cell click → AddSessionMenu
+src/components/AddSessionMenu.tsx (new) two-step Dialog: Plan/Activity → pick
+src/pages/Plan.tsx                drag swaps session contents (not day label),
+                                  reversed header/subheader
+src/pages/Home.tsx                day-rail chip header order swap (consistency)
+src/pages/Logger.tsx              cancel = supabase delete, updated dialog copy
+src/pages/ActivityLogger.tsx      read ?date & ?tag query params
 ```
 
 ### Notes
-- All values, steps, and section names stay sourced from `appConfig`.
-- No DB schema changes — plan edits write to existing `plans.parsed`, prefill reads existing `workout_logs.data`.
-- Swipe gesture works on touch + mouse; doesn't conflict with long-press multi-select (long-press fires on the header row, swipe on set rows).
-- Drag-and-drop uses native HTML5 (no new dep).
+
+- No DB migration needed.
+- Color tokens are added to config so they remain editable in one place.
+- Drag-swap keeps weekday slots stable, which matches the user's mental model (Monday is always Monday).
+- `AddSessionMenu` reuses existing routes — no new logging code paths.
 
