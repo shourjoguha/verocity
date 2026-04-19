@@ -15,12 +15,12 @@ export const appConfig = {
   },
 
   access: {
-    // Default global key. To rotate: update sha256(key) hex in app_settings.access_key_hash.
     defaultKey: "BARBELL",
     maxAttempts: 6,
   },
 
-  // Block names from the user's plan
+  // Block names from the user's plan (default seed for plan-driven sessions).
+  // Custom workouts can define their own section names.
   blocks: {
     sections: ["Warm-up", "Main", "Secondary", "Finisher"] as const,
     accumulation: { weeks: [1, 2, 3, 4], label: "Accumulation" },
@@ -28,15 +28,26 @@ export const appConfig = {
     peak: { weeks: [11, 12, 13, 14], label: "Peak" },
     taper: { weeks: [15, 16], label: "Taper" },
     deloadWeeks: [4, 10, 14, 16],
+    /** Visual markers for the Plan overview's left-edge accent bar. */
+    sectionMarkers: {
+      "Warm-up":   { className: "bg-muted",          label: "Warm-up" },
+      "Main":      { className: "bg-foreground",     label: "Main" },
+      "Secondary": { className: "bg-accent",         label: "Secondary" },
+      "Finisher":  { className: "bg-foreground/40 [background-image:repeating-linear-gradient(45deg,transparent,transparent_2px,hsl(var(--background))_2px,hsl(var(--background))_4px)]", label: "Finisher" },
+    } as Record<string, { className: string; label: string }>,
   },
 
   metrics: {
     list: ["weight", "reps", "rpe", "distance", "time"] as const,
+    /** Always present on a movement (cannot be swapped away). */
+    fixed: ["weight"] as const,
+    /** Mutually-swappable metrics (only one of these in a movement at a time). */
+    swappable: ["reps", "time", "distance"] as const,
     units: {
       weight: "kg",
       reps: "x",
       rpe: "RPE",
-      distance: "trips",
+      distance: "m",
       time: "s",
     },
     labels: {
@@ -46,7 +57,6 @@ export const appConfig = {
       distance: "DIST",
       time: "TIME",
     },
-    // Auto-detect primary metric for a movement based on tags or name keywords.
     primaryHints: [
       { match: /hold|plank|carry|carries|zone\s*2/i, primary: "time" },
       { match: /sled|farmer|trip/i, primary: "distance" },
@@ -75,7 +85,6 @@ export const appConfig = {
   },
 
   timer: {
-    // Per user: manual start, configurable per movement
     behavior: "manual" as const,
     defaults: {
       betweenSetsSeconds: 90,
@@ -96,7 +105,20 @@ export const appConfig = {
     scrollSnap: false,
   },
 
-  // Mapping for parser: section labels -> internal kind
+  // Activity tagging — applied to every workout_logs row.
+  activity: {
+    tags: ["sport", "recovery", "mobility", "strength", "conditioning"] as const,
+    defaultType: "strength",
+    /** Infer a tag from a plan day's "type" string. */
+    dayTypeTag: (type: string): "strength" | "conditioning" | "recovery" | "mobility" => {
+      const t = type.toLowerCase();
+      if (/recovery/.test(t)) return "recovery";
+      if (/mobility/.test(t)) return "mobility";
+      if (/conditioning|cardio|zone/.test(t)) return "conditioning";
+      return "strength";
+    },
+  },
+
   sectionAliases: {
     "warm-up": "Warm-up",
     "warmup": "Warm-up",
@@ -113,4 +135,6 @@ export const appConfig = {
 } as const;
 
 export type Metric = (typeof appConfig.metrics.list)[number];
+export type SwappableMetric = (typeof appConfig.metrics.swappable)[number];
 export type SectionName = (typeof appConfig.blocks.sections)[number];
+export type ActivityTag = (typeof appConfig.activity.tags)[number];

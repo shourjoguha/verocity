@@ -149,6 +149,7 @@ export type Database = {
       }
       workout_logs: {
         Row: {
+          activity_type: string
           created_at: string
           data: Json
           day_key: string | null
@@ -160,11 +161,13 @@ export type Database = {
           plan_id: string | null
           started_at: string | null
           status: string
+          tags: string[]
           total_seconds: number | null
           updated_at: string
           week_number: number | null
         }
         Insert: {
+          activity_type?: string
           created_at?: string
           data?: Json
           day_key?: string | null
@@ -176,11 +179,13 @@ export type Database = {
           plan_id?: string | null
           started_at?: string | null
           status?: string
+          tags?: string[]
           total_seconds?: number | null
           updated_at?: string
           week_number?: number | null
         }
         Update: {
+          activity_type?: string
           created_at?: string
           data?: Json
           day_key?: string | null
@@ -192,6 +197,7 @@ export type Database = {
           plan_id?: string | null
           started_at?: string | null
           status?: string
+          tags?: string[]
           total_seconds?: number | null
           updated_at?: string
           week_number?: number | null
