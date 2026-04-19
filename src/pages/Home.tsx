@@ -35,7 +35,7 @@ export default function Home() {
         supabase.from("plans").select("id,name,parsed,start_date,is_active").eq("owner_user_id", user.id).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds").eq("owner_user_id", user.id).order("log_date", { ascending: false }).limit(7),
       ]);
-      setPlan((planData as PlanRow) ?? null);
+      setPlan((planData as unknown as PlanRow) ?? null);
       setLogs((logsData as LogRow[]) ?? []);
       setLoading(false);
     })();

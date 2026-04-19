@@ -77,15 +77,15 @@ export default function PlanUpload() {
 
       // Deactivate other plans for this user
       await supabase.from("plans").update({ is_active: false }).eq("owner_user_id", user.id);
-      const { data, error } = await supabase.from("plans").insert({
+      const { error } = await supabase.from("plans").insert([{
         owner_user_id: user.id,
         name: planName || normalized.title,
         start_date: normalized.startDate ?? null,
         end_date: normalized.endDate ?? null,
         source_markdown: text,
-        parsed: normalized as unknown as object,
+        parsed: normalized as never,
         is_active: true,
-      }).select("id").single();
+      }]).select("id").single();
       if (error) throw error;
       toast.success("Plan saved.");
       nav("/");
