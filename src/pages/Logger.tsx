@@ -232,6 +232,8 @@ export default function Logger() {
       const g = s.groups.find((x) => x.id === groupId)!;
       const it = g.items[itemIdx];
       it.sets[setIdx].actual[metric] = value;
+      // First user edit promotes prefilled values to confirmed.
+      if (it.sets[setIdx].actual.prefilled) it.sets[setIdx].actual.prefilled = false;
     });
   }
   function toggleSetComplete(sectionId: string, groupId: string, itemIdx: number, setIdx: number) {
