@@ -197,7 +197,7 @@ export default function Plan() {
                 lastWeek={lastWeek}
                 dayLogs={dayLogs}
                 editMode={editMode}
-                onReorder={reorderDays}
+                onReorder={swapSessions}
                 onRename={renameMovement}
                 onRemove={removeMovement}
                 onEditCell={editWeekCell}
