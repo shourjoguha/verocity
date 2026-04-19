@@ -1,7 +1,7 @@
 /** Custom activity logger — sport, recovery, mobility, etc.
  *  Lightweight form: title, tags, date, duration, notes. */
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { format } from "date-fns";
 import { CalendarIcon, Save } from "lucide-react";
 import { TopBar } from "@/components/TopBar";
@@ -17,9 +17,14 @@ import { toast } from "sonner";
 export default function ActivityLogger() {
   const nav = useNavigate();
   const { user } = useSession();
+  const [search] = useSearchParams();
+  const initialTag = (search.get("tag") as ActivityTag | null);
+  const initialDate = search.get("date");
   const [title, setTitle] = useState("");
-  const [tags, setTags] = useState<Set<ActivityTag>>(new Set(["sport"]));
-  const [date, setDate] = useState<Date>(new Date());
+  const [tags, setTags] = useState<Set<ActivityTag>>(
+    new Set([initialTag && (appConfig.activity.tags as readonly string[]).includes(initialTag) ? initialTag : "sport"])
+  );
+  const [date, setDate] = useState<Date>(initialDate ? new Date(initialDate + "T00:00:00") : new Date());
   const [durationMin, setDurationMin] = useState<number>(30);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
