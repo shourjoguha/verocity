@@ -105,11 +105,17 @@ export default function Plan() {
     });
   }
 
-  function reorderDays(from: number, to: number) {
+  /** Swap session contents between two weekday slots (day-of-week label stays put). */
+  function swapSessions(from: number, to: number) {
     if (from === to) return;
     mutatePlan((p) => {
-      const [moved] = p.days.splice(from, 1);
-      p.days.splice(to, 0, moved);
+      const a = p.days[from];
+      const b = p.days[to];
+      // Preserve dayName on each slot; swap everything else.
+      const aDay = a.dayName;
+      const bDay = b.dayName;
+      p.days[from] = { ...b, dayName: aDay };
+      p.days[to] = { ...a, dayName: bDay };
     });
   }
 
@@ -191,7 +197,7 @@ export default function Plan() {
                 lastWeek={lastWeek}
                 dayLogs={dayLogs}
                 editMode={editMode}
-                onReorder={reorderDays}
+                onReorder={swapSessions}
                 onRename={renameMovement}
                 onRemove={removeMovement}
                 onEditCell={editWeekCell}
@@ -272,8 +278,8 @@ function DayAccordion(props: {
       <AccordionTrigger className="py-3 hover:no-underline">
         <div className="flex items-baseline gap-3">
           {editMode && <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />}
-          <span className="font-display text-xl uppercase tracking-[-0.04em]">{day.dayName}</span>
-          <span className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">{day.type}</span>
+          <span className="font-display text-xl uppercase tracking-[-0.04em]">{day.type}</span>
+          <span className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">{day.dayName}</span>
           {props.lastWeek && <span className="chip">Last: W{props.lastWeek}</span>}
         </div>
       </AccordionTrigger>

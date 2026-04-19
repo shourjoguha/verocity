@@ -108,6 +108,16 @@ export const appConfig = {
   // Activity tagging — applied to every workout_logs row.
   activity: {
     tags: ["sport", "recovery", "mobility", "strength", "conditioning"] as const,
+    /** Color per activity tag — used by the Calendar bar markers. HSL recommended elsewhere,
+     *  but these are bar fills (not theme tokens), so hex is acceptable here for clarity. */
+    tagColors: {
+      strength: "hsl(0 0% 7%)",
+      conditioning: "hsl(28 92% 44%)",
+      sport: "hsl(217 91% 50%)",
+      mobility: "hsl(142 71% 38%)",
+      recovery: "hsl(262 75% 55%)",
+    } as Record<string, string>,
+    fallbackColor: "hsl(0 0% 45%)",
     defaultType: "strength",
     /** Infer a tag from a plan day's "type" string. */
     dayTypeTag: (type: string): "strength" | "conditioning" | "recovery" | "mobility" => {

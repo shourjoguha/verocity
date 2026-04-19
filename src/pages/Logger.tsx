@@ -98,35 +98,41 @@ export default function Logger() {
           setTags(data.tags ?? ["strength"]);
           sw.setSeconds(data.total_seconds ?? 0);
         }
-      } else if (isCustomMode) {
-        const blank = buildBlankDocument();
-        const history = await loadHistory(user.id);
-        setDoc(prefillFromHistory(blank, history));
-        setDayKey("Custom workout");
-        setWeekNumber(0);
-        setActivityType("strength");
-        setTags(["strength"]);
       } else {
-        const day = search.get("day") ?? DAY_NAMES[new Date().getDay()];
-        const week = parseInt(search.get("week") ?? "1", 10);
-        const { data: planRow } = await supabase
-          .from("plans").select("id,parsed,start_date").eq("owner_user_id", user.id).eq("is_active", true).maybeSingle();
-        if (!planRow) {
-          toast.error("No active plan. Upload one first.");
-          nav("/plan/upload");
-          return;
+        // Seed log date from ?date= if present.
+        const dateParam = search.get("date");
+        if (dateParam) setLogDate(new Date(dateParam + "T00:00:00"));
+
+        if (isCustomMode) {
+          const blank = buildBlankDocument();
+          const history = await loadHistory(user.id);
+          setDoc(prefillFromHistory(blank, history));
+          setDayKey("Custom workout");
+          setWeekNumber(0);
+          setActivityType("strength");
+          setTags(["strength"]);
+        } else {
+          const day = search.get("day") ?? DAY_NAMES[new Date().getDay()];
+          const week = parseInt(search.get("week") ?? "1", 10);
+          const { data: planRow } = await supabase
+            .from("plans").select("id,parsed,start_date").eq("owner_user_id", user.id).eq("is_active", true).maybeSingle();
+          if (!planRow) {
+            toast.error("No active plan. Upload one first.");
+            nav("/plan/upload");
+            return;
+          }
+          const plan = (planRow.parsed as unknown as ParsedPlan);
+          const planDay = plan.days.find((d) => d.dayName === day) ?? plan.days[0];
+          setPlanId(planRow.id);
+          setDayKey(`${planDay.dayName} — ${planDay.type}`);
+          setWeekNumber(week || isoWeekIndexFromStart(planRow.start_date));
+          const built = buildLogDocument(plan, planDay, week || isoWeekIndexFromStart(planRow.start_date));
+          const history = await loadHistory(user.id);
+          setDoc(prefillFromHistory(built, history));
+          const inferred = appConfig.activity.dayTypeTag(planDay.type);
+          setActivityType(inferred);
+          setTags([inferred]);
         }
-        const plan = (planRow.parsed as unknown as ParsedPlan);
-        const planDay = plan.days.find((d) => d.dayName === day) ?? plan.days[0];
-        setPlanId(planRow.id);
-        setDayKey(`${planDay.dayName} — ${planDay.type}`);
-        setWeekNumber(week || isoWeekIndexFromStart(planRow.start_date));
-        const built = buildLogDocument(plan, planDay, week || isoWeekIndexFromStart(planRow.start_date));
-        const history = await loadHistory(user.id);
-        setDoc(prefillFromHistory(built, history));
-        const inferred = appConfig.activity.dayTypeTag(planDay.type);
-        setActivityType(inferred);
-        setTags([inferred]);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -184,17 +190,20 @@ export default function Logger() {
   function resumeSession() { sw.start(); setStatus("in_progress"); }
   async function cancelSession() {
     const ok = await confirm({
-      title: "Cancel session?",
-      description: "It will be marked cancelled. Logged data is kept.",
-      confirmLabel: "Cancel session",
-      cancelLabel: "Keep going",
+      title: "Delete this session?",
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      cancelLabel: "Keep",
       destructive: true,
     });
     if (!ok) return;
     sw.pause();
-    setStatus("cancelled");
-    setEndedAt(new Date().toISOString());
-    void saveLog(true);
+    if (logId) {
+      const { error } = await supabase.from("workout_logs").delete().eq("id", logId);
+      if (error) { toast.error("Delete failed"); return; }
+    }
+    toast.success("Session deleted");
+    nav("/");
   }
   async function restartSession() {
     const ok = await confirm({

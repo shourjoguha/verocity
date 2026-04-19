@@ -1,4 +1,7 @@
-/** Calendar — month view, dot per logged session. */
+/** Calendar — month view with colored bars per logged session.
+ *  - One thin colored bar per session, color from dominant tag.
+ *  - Cancelled logs are filtered out.
+ *  - Click a bar → open log. Click a cell (anywhere else) → AddSessionMenu. */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopBar } from "@/components/TopBar";
@@ -7,8 +10,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { appConfig } from "@/config/app.config";
+import { AddSessionMenu } from "@/components/AddSessionMenu";
 
-type LogRow = { id: string; log_date: string; day_key: string | null; status: string; total_seconds: number | null };
+type LogRow = { id: string; log_date: string; day_key: string | null; status: string; total_seconds: number | null; tags: string[] | null; activity_type: string | null };
 
 function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function endOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
@@ -16,19 +21,27 @@ function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
+function colorForLog(l: LogRow): string {
+  const tags = l.tags ?? [];
+  const dominant = tags[0] ?? l.activity_type ?? "strength";
+  return appConfig.activity.tagColors[dominant] ?? appConfig.activity.fallbackColor;
+}
+
 export default function Calendar() {
   const nav = useNavigate();
   const { user } = useSession();
   const [cursor, setCursor] = useState(new Date());
   const [logs, setLogs] = useState<Record<string, LogRow[]>>({});
+  const [addFor, setAddFor] = useState<string | null>(null);
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);
 
   useEffect(() => {
     if (!user) return;
     supabase.from("workout_logs")
-      .select("id,log_date,day_key,status,total_seconds")
+      .select("id,log_date,day_key,status,total_seconds,tags,activity_type")
       .eq("owner_user_id", user.id)
+      .neq("status", "cancelled")
       .gte("log_date", ymd(monthStart))
       .lte("log_date", ymd(monthEnd))
       .order("log_date", { ascending: true })
@@ -75,26 +88,28 @@ export default function Calendar() {
           {cells.map((c) => {
             if (!c.date) return <div key={c.key} className="aspect-square border-r border-b hairline bg-secondary/40" />;
             const todays = logs[c.key] ?? [];
-            const total = todays.reduce((n, r) => n + (r.total_seconds ?? 0), 0);
-            const intensity = Math.min(1, total / 4500); // 75min => max
             return (
-              <button
+              <div
                 key={c.key}
-                onClick={() => todays[0] && nav(`/log/${todays[0].id}`)}
-                disabled={todays.length === 0}
-                className="relative aspect-square border-r border-b hairline p-1 text-left hover:bg-secondary transition-colors duration-slow ease-swiss disabled:hover:bg-transparent"
+                onClick={() => setAddFor(c.key)}
+                className="relative aspect-square border-r border-b hairline p-1 text-left hover:bg-secondary transition-colors duration-slow ease-swiss cursor-pointer"
               >
                 <div className="text-[0.65rem] font-mono text-muted-foreground">{c.date.getDate()}</div>
                 {todays.length > 0 && (
-                  <div className="absolute inset-x-1 bottom-1 flex items-center gap-1">
-                    <div
-                      className="h-1 flex-1 bg-foreground"
-                      style={{ opacity: 0.25 + intensity * 0.75 }}
-                    />
-                    {todays[0].status === "done" && <div className="h-1.5 w-1.5 bg-foreground" />}
+                  <div className="absolute inset-x-0.5 bottom-0.5 flex flex-col gap-0.5">
+                    {todays.slice(0, 4).map((l) => (
+                      <button
+                        key={l.id}
+                        onClick={(e) => { e.stopPropagation(); nav(`/log/${l.id}`); }}
+                        className="h-1.5 w-full hover:opacity-80 transition-opacity"
+                        style={{ background: colorForLog(l) }}
+                        aria-label={l.day_key ?? "Session"}
+                        title={l.day_key ?? "Session"}
+                      />
+                    ))}
                   </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -106,6 +121,7 @@ export default function Calendar() {
               <li key={l.id}>
                 <button onClick={() => nav(`/log/${l.id}`)} className="w-full px-1 py-3 flex items-center justify-between hover:bg-secondary transition-colors duration-slow ease-swiss">
                   <div className="flex items-baseline gap-3">
+                    <span className="inline-block h-3 w-1 self-center" style={{ background: colorForLog(l) }} />
                     <span className="font-mono text-xs text-muted-foreground">{l.log_date}</span>
                     <span className="font-display text-base tracking-[-0.03em]">{l.day_key ?? "Session"}</span>
                   </div>
@@ -120,6 +136,8 @@ export default function Calendar() {
           </ul>
         </section>
       </main>
+
+      <AddSessionMenu open={!!addFor} date={addFor ?? ""} onClose={() => setAddFor(null)} />
     </>
   );
 }
