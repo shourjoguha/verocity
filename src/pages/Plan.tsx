@@ -1,15 +1,21 @@
 /** Plan overview — compressed table per day with sticky movement-name column.
- *  Last completed week is highlighted and shows actual best set. */
-import { useEffect, useMemo, useState } from "react";
+ *  Last completed week is highlighted and shows actual best set.
+ *  Edit mode allows reordering days (drag-and-drop), inline cell editing,
+ *  movement rename/remove, and adding movements via the LibraryPicker. */
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
 import { useSession } from "@/lib/session";
 import { supabase } from "@/integrations/supabase/client";
-import { appConfig } from "@/config/app.config";
+import { appConfig, type Metric } from "@/config/app.config";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import type { ParsedPlan, LogDocument } from "@/lib/types";
+import type { ParsedPlan, LogDocument, PlanExercise, PlanDay } from "@/lib/types";
+import { parsePlannedCell } from "@/lib/planParser";
+import { LibraryPicker } from "@/components/LibraryPicker";
 import { cn } from "@/lib/utils";
+import { GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 const WEEKS = Array.from({ length: 16 }, (_, i) => i + 1);
 
@@ -46,17 +52,21 @@ function bestActualForMovement(logDoc: LogDocument, movementName: string): strin
 export default function Plan() {
   const { user } = useSession();
   const [plan, setPlan] = useState<ParsedPlan | null>(null);
+  const [planDbId, setPlanDbId] = useState<string | null>(null);
   const [logsByDay, setLogsByDay] = useState<Map<string, LogRow[]>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [picker, setPicker] = useState<{ dayIdx: number } | null>(null);
 
   useEffect(() => {
     if (!user) return;
     (async () => {
       const [{ data: planRow }, { data: logsData }] = await Promise.all([
-        supabase.from("plans").select("parsed").eq("owner_user_id", user.id).eq("is_active", true).maybeSingle(),
+        supabase.from("plans").select("id,parsed").eq("owner_user_id", user.id).eq("is_active", true).maybeSingle(),
         supabase.from("workout_logs").select("week_number,day_key,data,status").eq("owner_user_id", user.id).eq("status", "done").order("log_date", { ascending: false }),
       ]);
       setPlan((planRow?.parsed as unknown as ParsedPlan) ?? null);
+      setPlanDbId(planRow?.id ?? null);
       const map = new Map<string, LogRow[]>();
       for (const l of ((logsData ?? []) as unknown as LogRow[])) {
         const key = (l.day_key ?? "").split("—")[0].trim();
@@ -69,6 +79,69 @@ export default function Plan() {
       setLoading(false);
     })();
   }, [user]);
+
+  // Debounced auto-save in edit mode.
+  const dirtyRef = useRef(false);
+  useEffect(() => {
+    if (!editMode) return;
+    const i = window.setInterval(() => {
+      if (dirtyRef.current && plan && planDbId) {
+        dirtyRef.current = false;
+        supabase.from("plans").update({ parsed: plan as never }).eq("id", planDbId).then(({ error }) => {
+          if (error) toast.error("Plan save failed");
+        });
+      }
+    }, 1500);
+    return () => window.clearInterval(i);
+  }, [editMode, plan, planDbId]);
+
+  function mutatePlan(mut: (p: ParsedPlan) => void) {
+    setPlan((prev) => {
+      if (!prev) return prev;
+      const next: ParsedPlan = JSON.parse(JSON.stringify(prev));
+      mut(next);
+      dirtyRef.current = true;
+      return next;
+    });
+  }
+
+  function reorderDays(from: number, to: number) {
+    if (from === to) return;
+    mutatePlan((p) => {
+      const [moved] = p.days.splice(from, 1);
+      p.days.splice(to, 0, moved);
+    });
+  }
+
+  function renameMovement(dayIdx: number, exIdx: number, name: string) {
+    if (!name.trim()) return;
+    mutatePlan((p) => { p.days[dayIdx].exercises[exIdx].name = name.trim(); });
+  }
+
+  function removeMovement(dayIdx: number, exIdx: number) {
+    mutatePlan((p) => { p.days[dayIdx].exercises.splice(exIdx, 1); });
+  }
+
+  function editWeekCell(dayIdx: number, exIdx: number, week: number, raw: string) {
+    mutatePlan((p) => {
+      const ex = p.days[dayIdx].exercises[exIdx];
+      const parsed = raw.trim() ? parsePlannedCell(raw) : null;
+      ex.weeks[week] = parsed;
+    });
+  }
+
+  function addMovement(dayIdx: number, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric }) {
+    mutatePlan((p) => {
+      p.days[dayIdx].exercises.push({
+        block: "Main",
+        name: mov.name,
+        weeks: {},
+        metrics: mov.metrics,
+        primaryMetric: mov.primaryMetric,
+        variant: null,
+      });
+    });
+  }
 
   if (loading) {
     return (<><TopBar title="Plan" /><main className="p-8 text-xs uppercase tracking-[0.16em] text-muted-foreground">Loading…</main></>);
@@ -90,31 +163,54 @@ export default function Plan() {
     <>
       <TopBar title="Plan" />
       <main className="mx-auto max-w-5xl px-4 pb-24 pt-6">
-        <EchoHeadline className="text-[2.25rem] sm:text-[3rem]">{plan.title}</EchoHeadline>
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <EchoHeadline className="text-[2.25rem] sm:text-[3rem]">{plan.title}</EchoHeadline>
+          <button
+            onClick={() => setEditMode((e) => !e)}
+            className={cn(
+              "text-[0.65rem] uppercase tracking-[0.14em] px-3 py-1.5 border transition-colors duration-slow ease-swiss",
+              editMode ? "bg-foreground text-background border-foreground" : "hairline hover:bg-secondary",
+            )}
+          >
+            {editMode ? "Done" : "Edit plan"}
+          </button>
+        </div>
         {plan.goal && <p className="mt-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">{plan.goal}</p>}
 
         <Legend />
 
         <Accordion type="multiple" className="mt-6">
-          {plan.days.map((day) => {
+          {plan.days.map((day, dayIdx) => {
             const dayLogs = logsByDay.get(day.dayName) ?? [];
             const lastWeek = dayLogs[0]?.week_number ?? null;
             return (
-              <AccordionItem key={day.dayName} value={day.dayName} className="border-b hairline">
-                <AccordionTrigger className="py-3 hover:no-underline">
-                  <div className="flex items-baseline gap-3">
-                    <span className="font-display text-xl uppercase tracking-[-0.04em]">{day.dayName}</span>
-                    <span className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">{day.type}</span>
-                    {lastWeek && <span className="chip">Last: W{lastWeek}</span>}
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="pb-4">
-                  <DayTable day={day} lastWeek={lastWeek} dayLogs={dayLogs} />
-                </AccordionContent>
-              </AccordionItem>
+              <DayAccordion
+                key={day.dayName + dayIdx}
+                day={day}
+                dayIdx={dayIdx}
+                lastWeek={lastWeek}
+                dayLogs={dayLogs}
+                editMode={editMode}
+                onReorder={reorderDays}
+                onRename={renameMovement}
+                onRemove={removeMovement}
+                onEditCell={editWeekCell}
+                onAddMovement={() => setPicker({ dayIdx })}
+              />
             );
           })}
         </Accordion>
+
+        {picker && (
+          <LibraryPicker
+            ownerId={user?.id}
+            onClose={() => setPicker(null)}
+            onPick={(mov) => {
+              addMovement(picker.dayIdx, mov);
+              setPicker(null);
+            }}
+          />
+        )}
       </main>
     </>
   );
@@ -134,7 +230,79 @@ function Legend() {
   );
 }
 
-function DayTable({ day, lastWeek, dayLogs }: { day: import("@/lib/types").PlanDay; lastWeek: number | null; dayLogs: LogRow[] }) {
+function DayAccordion(props: {
+  day: PlanDay;
+  dayIdx: number;
+  lastWeek: number | null;
+  dayLogs: LogRow[];
+  editMode: boolean;
+  onReorder: (from: number, to: number) => void;
+  onRename: (dayIdx: number, exIdx: number, name: string) => void;
+  onRemove: (dayIdx: number, exIdx: number) => void;
+  onEditCell: (dayIdx: number, exIdx: number, week: number, raw: string) => void;
+  onAddMovement: () => void;
+}) {
+  const { day, dayIdx, editMode } = props;
+  const [dragOver, setDragOver] = useState(false);
+  return (
+    <AccordionItem
+      value={day.dayName + dayIdx}
+      className={cn("border-b hairline transition-colors", dragOver && "bg-secondary")}
+      draggable={editMode}
+      onDragStart={(e) => {
+        if (!editMode) return;
+        e.dataTransfer.setData("text/plain", String(dayIdx));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={(e) => {
+        if (!editMode) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        if (!editMode) return;
+        e.preventDefault();
+        setDragOver(false);
+        const from = parseInt(e.dataTransfer.getData("text/plain"), 10);
+        if (!Number.isNaN(from)) props.onReorder(from, dayIdx);
+      }}
+    >
+      <AccordionTrigger className="py-3 hover:no-underline">
+        <div className="flex items-baseline gap-3">
+          {editMode && <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />}
+          <span className="font-display text-xl uppercase tracking-[-0.04em]">{day.dayName}</span>
+          <span className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">{day.type}</span>
+          {props.lastWeek && <span className="chip">Last: W{props.lastWeek}</span>}
+        </div>
+      </AccordionTrigger>
+      <AccordionContent className="pb-4">
+        <DayTable {...props} />
+        {editMode && (
+          <button
+            onClick={props.onAddMovement}
+            className="mt-2 w-full border border-dashed hairline py-2 text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground hover:bg-secondary transition-colors"
+          >
+            <Plus className="inline h-3 w-3 mr-1" /> Add movement
+          </button>
+        )}
+      </AccordionContent>
+    </AccordionItem>
+  );
+}
+
+function DayTable(props: {
+  day: PlanDay;
+  dayIdx: number;
+  lastWeek: number | null;
+  dayLogs: LogRow[];
+  editMode: boolean;
+  onRename: (dayIdx: number, exIdx: number, name: string) => void;
+  onRemove: (dayIdx: number, exIdx: number) => void;
+  onEditCell: (dayIdx: number, exIdx: number, week: number, raw: string) => void;
+}) {
+  const { day, dayIdx, lastWeek, dayLogs, editMode } = props;
   const lastLog = useMemo(() => lastWeek ? dayLogs.find((l) => l.week_number === lastWeek) : null, [lastWeek, dayLogs]);
   const markers = appConfig.blocks.sectionMarkers;
 
@@ -154,6 +322,7 @@ function DayTable({ day, lastWeek, dayLogs }: { day: import("@/lib/types").PlanD
                   </th>
                 );
               })}
+              {editMode && <th className="w-10 sticky right-0 bg-background border-l hairline"></th>}
             </tr>
           </thead>
           <tbody>
@@ -170,7 +339,15 @@ function DayTable({ day, lastWeek, dayLogs }: { day: import("@/lib/types").PlanD
                         </TooltipTrigger>
                         <TooltipContent side="right" className="text-[0.6rem] uppercase tracking-[0.12em]">{sectionKey}</TooltipContent>
                       </Tooltip>
-                      <span className="font-display text-sm tracking-[-0.03em] truncate max-w-[160px]">{ex.variant ?? ex.name}</span>
+                      {editMode ? (
+                        <EditableText
+                          value={ex.variant ?? ex.name}
+                          onSave={(v) => props.onRename(dayIdx, idx, v)}
+                          className="font-display text-sm tracking-[-0.03em] truncate max-w-[160px]"
+                        />
+                      ) : (
+                        <span className="font-display text-sm tracking-[-0.03em] truncate max-w-[160px]">{ex.variant ?? ex.name}</span>
+                      )}
                     </div>
                   </td>
                   {WEEKS.map((w) => {
@@ -178,17 +355,29 @@ function DayTable({ day, lastWeek, dayLogs }: { day: import("@/lib/types").PlanD
                     const isLast = w === lastWeek;
                     const actual = isLast && lastLog ? bestActualForMovement(lastLog.data, ex.variant ?? ex.name) : null;
                     return (
-                      <td key={w} className={cn("text-center font-mono text-[0.7rem]", isLast && "bg-foreground text-background")}>
-                        {actual ? (
-                          <span className="font-bold">{actual}</span>
+                      <td key={w} className={cn("text-center font-mono text-[0.7rem] p-0", isLast && !editMode && "bg-foreground text-background")}>
+                        {editMode ? (
+                          <EditableCell
+                            value={planned?.raw ?? ""}
+                            onSave={(v) => props.onEditCell(dayIdx, idx, w, v)}
+                          />
+                        ) : actual ? (
+                          <span className="font-bold inline-block py-1.5">{actual}</span>
                         ) : planned ? (
-                          <span>{planned.raw}</span>
+                          <span className="inline-block py-1.5">{planned.raw}</span>
                         ) : (
-                          <span className="text-muted-foreground">·</span>
+                          <span className="text-muted-foreground inline-block py-1.5">·</span>
                         )}
                       </td>
                     );
                   })}
+                  {editMode && (
+                    <td className="sticky right-0 bg-background border-l hairline text-center">
+                      <button onClick={() => props.onRemove(dayIdx, idx)} className="p-1 text-muted-foreground hover:text-destructive">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -196,5 +385,64 @@ function DayTable({ day, lastWeek, dayLogs }: { day: import("@/lib/types").PlanD
         </table>
       </div>
     </TooltipProvider>
+  );
+}
+
+function EditableText({ value, onSave, className }: { value: string; onSave: (v: string) => void; className?: string }) {
+  const [editing, setEditing] = useState(false);
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  if (!editing) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        className={cn("text-left inline-flex items-center gap-1 group", className)}
+      >
+        <span className="truncate">{value || <span className="text-muted-foreground italic">untitled</span>}</span>
+        <Pencil className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 text-muted-foreground" />
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => { onSave(v); setEditing(false); }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") { setV(value); setEditing(false); }
+      }}
+      className={cn("bg-transparent border-b border-foreground focus:outline-none w-full", className)}
+    />
+  );
+}
+
+function EditableCell({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  if (!editing) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        className="w-full py-1.5 text-center hover:bg-secondary transition-colors text-[0.7rem] font-mono"
+      >
+        {value || <span className="text-muted-foreground">·</span>}
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => { onSave(v); setEditing(false); }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") { setV(value); setEditing(false); }
+      }}
+      className="w-full py-1.5 text-center bg-transparent border-b border-foreground focus:outline-none font-mono text-[0.7rem]"
+    />
   );
 }
