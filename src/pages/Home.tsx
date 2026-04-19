@@ -53,19 +53,47 @@ export default function Home() {
 
   useEffect(() => {
     if (!user) return;
-    (async () => {
+    let cancelled = false;
+
+    async function fetchAll() {
       const [{ data: planData }, { data: recentData }, { data: allLogsData }] = await Promise.all([
         supabase.from("plans").select("id,name,parsed,start_date,end_date,is_active").eq("owner_user_id", user.id).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags").eq("owner_user_id", user.id).in("status", ["done", "in_progress"]).order("log_date", { ascending: false }).limit(5),
         supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags").eq("owner_user_id", user.id).neq("status", "cancelled").order("log_date", { ascending: false }),
       ]);
+      if (cancelled) return;
       setPlan((planData as unknown as PlanRow) ?? null);
       setLogs((recentData as LogRow[]) ?? []);
       setAllLogs((allLogsData as LogRow[]) ?? []);
-      const todayName = DAY_NAMES[new Date().getDay()];
-      setActiveDay(todayName);
+      setActiveDay((cur) => cur ?? DAY_NAMES[new Date().getDay()]);
       setLoading(false);
-    })();
+    }
+
+    fetchAll();
+
+    // Refetch on tab focus (returning from Logger after save)
+    function onVisible() {
+      if (document.visibilityState === "visible") fetchAll();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", fetchAll);
+
+    // Realtime: refetch when this user's workout_logs change
+    const channel = supabase
+      .channel(`home-logs-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "workout_logs", filter: `owner_user_id=eq.${user.id}` },
+        () => fetchAll(),
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", fetchAll);
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const today = new Date();
