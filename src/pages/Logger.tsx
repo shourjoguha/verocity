@@ -1,27 +1,34 @@
 /** Logger — heart of the app.
- *  - Accordion sections (Warm-up / Main / Secondary / Finisher)
+ *  - Accordion sections (configurable / custom)
  *  - Compact tables of sets per movement (planned vs actual)
  *  - Long-press to multi-select; group/ungroup as superset / circuit
  *  - Per-movement and per-set rest timers (manual start)
  *  - Session stopwatch with start / pause / resume / cancel / restart
  *  - Swap movement via library picker, add custom movement
+ *  - Date picker for log_date
+ *  - Swappable metric column headers (reps ↔ time ↔ distance)
+ *  - Custom workout mode with editable section names
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { format } from "date-fns";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
 import { useSession } from "@/lib/session";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { supabase } from "@/integrations/supabase/client";
-import type { LogDocument, LogGroup, LogItem, LogSection, LogSet, ParsedPlan, PlannedSet } from "@/lib/types";
-import { buildLogDocument, makeId } from "@/lib/logBuilder";
+import type { LogDocument, LogGroup, LogItem, LogSection, LogSet, ParsedPlan } from "@/lib/types";
+import { buildBlankDocument, buildLogDocument, makeId, migrateDocument } from "@/lib/logBuilder";
 import { useLongPress } from "@/hooks/useLongPress";
 import { useStopwatch, useCountdown, fmt, fmtLong } from "@/hooks/useTimer";
-import { appConfig, type Metric } from "@/config/app.config";
+import { appConfig, type Metric, type SwappableMetric } from "@/config/app.config";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2 } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
+import { cn } from "@/lib/utils";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -34,6 +41,7 @@ function isoWeekIndexFromStart(startDateIso: string | null): number {
 }
 
 const METRIC_ORDER: Metric[] = ["weight", "reps", "rpe", "distance", "time"];
+const SWAPPABLE = appConfig.metrics.swappable as readonly SwappableMetric[];
 
 interface SelectionKey { sectionId: string; groupId: string; itemIndex: number }
 const keyOf = (s: string, g: string, i: number) => `${s}::${g}::${i}`;
@@ -47,12 +55,17 @@ export default function Logger() {
   const { user } = useSession();
   const params = useParams<{ id?: string }>();
   const [search] = useSearchParams();
+  const confirm = useConfirm();
+  const isCustomMode = search.get("mode") === "custom";
 
   const [logId, setLogId] = useState<string | null>(params.id ?? null);
   const [doc, setDoc] = useState<LogDocument | null>(null);
   const [dayKey, setDayKey] = useState<string>("");
   const [weekNumber, setWeekNumber] = useState<number>(1);
   const [planId, setPlanId] = useState<string | null>(null);
+  const [activityType, setActivityType] = useState<string>(appConfig.activity.defaultType);
+  const [tags, setTags] = useState<string[]>(["strength"]);
+  const [logDate, setLogDate] = useState<Date>(new Date());
   const [status, setStatus] = useState<"planned" | "in_progress" | "paused" | "done" | "cancelled">("planned");
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [endedAt, setEndedAt] = useState<string | null>(null);
@@ -71,7 +84,7 @@ export default function Logger() {
       if (logId) {
         const { data } = await supabase.from("workout_logs").select("*").eq("id", logId).maybeSingle();
         if (data) {
-          setDoc(data.data as unknown as LogDocument);
+          setDoc(migrateDocument(data.data as unknown as LogDocument));
           setDayKey(data.day_key ?? "");
           setWeekNumber(data.week_number ?? 1);
           setPlanId(data.plan_id);
@@ -79,8 +92,17 @@ export default function Logger() {
           setStartedAt(data.started_at);
           setEndedAt(data.ended_at);
           setAccumSec(data.total_seconds ?? 0);
+          setLogDate(data.log_date ? new Date(data.log_date + "T00:00:00") : new Date());
+          setActivityType(data.activity_type ?? appConfig.activity.defaultType);
+          setTags(data.tags ?? ["strength"]);
           sw.setSeconds(data.total_seconds ?? 0);
         }
+      } else if (isCustomMode) {
+        setDoc(buildBlankDocument());
+        setDayKey("Custom workout");
+        setWeekNumber(0);
+        setActivityType("strength");
+        setTags(["strength"]);
       } else {
         const day = search.get("day") ?? DAY_NAMES[new Date().getDay()];
         const week = parseInt(search.get("week") ?? "1", 10);
@@ -98,6 +120,9 @@ export default function Logger() {
         setWeekNumber(week || isoWeekIndexFromStart(planRow.start_date));
         const built = buildLogDocument(plan, planDay, week || isoWeekIndexFromStart(planRow.start_date));
         setDoc(built);
+        const inferred = appConfig.activity.dayTypeTag(planDay.type);
+        setActivityType(inferred);
+        setTags([inferred]);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -105,12 +130,12 @@ export default function Logger() {
 
   // Auto-save every N seconds while doc is dirty
   const dirtyRef = useRef(false);
-  useEffect(() => { dirtyRef.current = true; }, [doc, status, accumSec]);
+  useEffect(() => { dirtyRef.current = true; }, [doc, status, accumSec, logDate, tags]);
   useEffect(() => {
     const i = window.setInterval(() => { if (dirtyRef.current && doc && user) saveLog(false); }, appConfig.session.autoSaveIntervalSeconds * 1000);
     return () => window.clearInterval(i);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, status, accumSec, user]);
+  }, [doc, status, accumSec, user, logDate, tags]);
 
   // Sync stopwatch into accumSec
   useEffect(() => { setAccumSec(sw.seconds); }, [sw.seconds]);
@@ -122,13 +147,15 @@ export default function Logger() {
       owner_user_id: user.id,
       plan_id: planId,
       day_key: dayKey,
-      week_number: weekNumber,
+      week_number: weekNumber || null,
       status,
       started_at: startedAt,
       ended_at: endedAt,
       total_seconds: accumSec,
       data: doc as never,
-      log_date: (startedAt ?? new Date().toISOString()).slice(0, 10),
+      log_date: format(logDate, "yyyy-MM-dd"),
+      activity_type: activityType,
+      tags,
     };
     if (logId) {
       const { error } = await supabase.from("workout_logs").update(payload).eq("id", logId);
@@ -151,15 +178,27 @@ export default function Logger() {
   }
   function pauseSession() { sw.pause(); setStatus("paused"); }
   function resumeSession() { sw.start(); setStatus("in_progress"); }
-  function cancelSession() {
-    if (!confirm("Cancel this session? It will be marked cancelled.")) return;
+  async function cancelSession() {
+    const ok = await confirm({
+      title: "Cancel session?",
+      description: "It will be marked cancelled. Logged data is kept.",
+      confirmLabel: "Cancel session",
+      cancelLabel: "Keep going",
+      destructive: true,
+    });
+    if (!ok) return;
     sw.pause();
     setStatus("cancelled");
     setEndedAt(new Date().toISOString());
     void saveLog(true);
   }
-  function restartSession() {
-    if (!confirm("Restart timer to 00:00? Logged data is kept.")) return;
+  async function restartSession() {
+    const ok = await confirm({
+      title: "Restart timer?",
+      description: "Timer resets to 00:00. Logged sets are kept.",
+      confirmLabel: "Restart timer",
+    });
+    if (!ok) return;
     sw.reset();
     setStartedAt(new Date().toISOString());
     setEndedAt(null);
@@ -220,7 +259,6 @@ export default function Logger() {
       const s = d.sections.find((x) => x.id === sectionId)!;
       const g = s.groups.find((x) => x.id === groupId)!;
       g.items[itemIdx].restBetweenSetsSeconds = sec;
-      // Update remaining sets too
       for (const st of g.items[itemIdx].sets) st.restAfterSeconds = sec;
     });
   }
@@ -255,7 +293,14 @@ export default function Logger() {
       const it = g.items[target.itemIndex];
       it.movementId = mov.id;
       it.name = mov.name;
-      it.metrics = mov.metrics;
+      // Enforce: weight always present + only one swappable.
+      const set = new Set<Metric>(mov.metrics);
+      set.add("weight");
+      const present = SWAPPABLE.filter((m) => set.has(m));
+      const keep = present[0] ?? "reps";
+      for (const m of SWAPPABLE) set.delete(m);
+      set.add(keep);
+      it.metrics = Array.from(set);
       it.primaryMetric = mov.primaryMetric;
       it.restBetweenSetsSeconds = mov.default_rest_seconds || it.restBetweenSetsSeconds;
     });
@@ -263,13 +308,19 @@ export default function Logger() {
   function addMovement(sectionId: string, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
     updateDoc((d) => {
       const s = d.sections.find((x) => x.id === sectionId)!;
+      const set = new Set<Metric>(mov.metrics);
+      set.add("weight");
+      const present = SWAPPABLE.filter((m) => set.has(m));
+      const keep = present[0] ?? "reps";
+      for (const m of SWAPPABLE) set.delete(m);
+      set.add(keep);
       s.groups.push({
         id: makeId(),
         kind: "single",
         items: [{
           movementId: mov.id,
           name: mov.name,
-          metrics: mov.metrics,
+          metrics: Array.from(set),
           primaryMetric: mov.primaryMetric,
           notations: [],
           sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
@@ -289,6 +340,48 @@ export default function Logger() {
       else set.notations.push(tag);
     });
   }
+  function swapMetric(sectionId: string, groupId: string, itemIdx: number, oldMetric: SwappableMetric, newMetric: SwappableMetric) {
+    if (oldMetric === newMetric) return;
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId)!;
+      const g = s.groups.find((x) => x.id === groupId)!;
+      const it = g.items[itemIdx];
+      it.metrics = it.metrics.filter((m) => m !== oldMetric).concat(newMetric);
+      // Ensure weight stays
+      if (!it.metrics.includes("weight")) it.metrics.unshift("weight");
+      // Clear stale values for the replaced metric
+      for (const set of it.sets) {
+        delete set.actual[oldMetric];
+      }
+      if (it.primaryMetric === oldMetric) it.primaryMetric = newMetric;
+    });
+  }
+
+  // Custom-section editing
+  function addSection() {
+    updateDoc((d) => {
+      d.sections.push({ id: makeId(), name: "New section", groups: [] });
+    });
+  }
+  function renameSection(sectionId: string, name: string) {
+    if (!name.trim()) return;
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId);
+      if (s) s.name = name.trim();
+    });
+  }
+  async function removeSection(sectionId: string) {
+    const ok = await confirm({
+      title: "Remove section?",
+      description: "All movements within will be removed.",
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
+    updateDoc((d) => {
+      d.sections = d.sections.filter((s) => s.id !== sectionId);
+    });
+  }
 
   // Selection
   function toggleSelect(k: string) {
@@ -302,7 +395,6 @@ export default function Logger() {
   function groupSelected(kind: "superset" | "circuit") {
     if (!doc || selected.size < 2) return;
     const keys = Array.from(selected).map(parseKey);
-    // Must be in same section
     const sectionId = keys[0].sectionId;
     if (!keys.every((k) => k.sectionId === sectionId)) {
       toast.error("Group items within the same section.");
@@ -310,7 +402,6 @@ export default function Logger() {
     }
     updateDoc((d) => {
       const s = d.sections.find((x) => x.id === sectionId)!;
-      // Collect items
       const items: LogItem[] = [];
       const removeFrom: { groupId: string; itemIndex: number }[] = [];
       for (const k of keys) {
@@ -318,15 +409,12 @@ export default function Logger() {
         items.push(g.items[k.itemIndex]);
         removeFrom.push({ groupId: k.groupId, itemIndex: k.itemIndex });
       }
-      // Sort removals descending so indexes stay valid
       removeFrom.sort((a, b) => (a.groupId === b.groupId ? b.itemIndex - a.itemIndex : 0));
       for (const r of removeFrom) {
         const g = s.groups.find((x) => x.id === r.groupId)!;
         g.items.splice(r.itemIndex, 1);
       }
-      // Drop empty groups
       s.groups = s.groups.filter((g) => g.items.length > 0);
-      // Insert new group
       s.groups.push({
         id: makeId(),
         kind,
@@ -356,23 +444,66 @@ export default function Logger() {
         });
         if (g.items.length === 1) g.kind = "single";
       }
-      // Remove empty groups
       for (const s of d.sections) s.groups = s.groups.filter((g) => g.items.length > 0);
     });
     clearSelection();
+  }
+
+  function toggleTag(t: string) {
+    setTags((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]);
   }
 
   if (!doc) {
     return (<><TopBar title="Logger" /><main className="p-8 text-xs uppercase tracking-[0.16em] text-muted-foreground">Loading…</main></>);
   }
 
+  const allowSectionEdit = isCustomMode || !planId;
+
   return (
     <>
       <TopBar title={dayKey || "Logger"} />
       <main className="mx-auto max-w-3xl px-4 pb-32 pt-4">
-        <div className="flex items-baseline justify-between gap-3">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
           <EchoHeadline className="text-[1.75rem] sm:text-[2.25rem]">{dayKey || "Session"}</EchoHeadline>
-          <div className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">Week {weekNumber}</div>
+          {weekNumber > 0 && <div className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">Week {weekNumber}</div>}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="flex items-center gap-2 border hairline px-3 py-1.5 text-xs hover:bg-secondary transition-colors duration-slow ease-swiss">
+                <CalendarIcon className="h-3 w-3" />
+                <span className="font-mono">{format(logDate, "yyyy-MM-dd")}</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={logDate}
+                onSelect={(d) => d && setLogDate(d)}
+                initialFocus
+                className={cn("p-3 pointer-events-auto")}
+              />
+            </PopoverContent>
+          </Popover>
+
+          <div className="flex items-center gap-1">
+            {appConfig.activity.tags.map((t) => {
+              const on = tags.includes(t);
+              return (
+                <button
+                  key={t}
+                  onClick={() => toggleTag(t)}
+                  className={cn(
+                    "text-[0.6rem] uppercase tracking-[0.12em] px-2 py-1 border transition-colors duration-slow ease-swiss",
+                    on ? "bg-foreground text-background border-foreground" : "hairline hover:bg-secondary",
+                  )}
+                >
+                  {t}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <SessionTimer
@@ -393,8 +524,13 @@ export default function Logger() {
           {doc.sections.map((section) => (
             <AccordionItem key={section.id} value={section.id} className="border-b hairline">
               <AccordionTrigger className="py-3 hover:no-underline">
-                <div className="flex items-baseline gap-3">
-                  <span className="font-display text-xl uppercase tracking-[-0.04em]">{section.name}</span>
+                <div className="flex items-baseline gap-3 w-full">
+                  <SectionTitle
+                    name={section.name}
+                    editable={allowSectionEdit}
+                    onRename={(n) => renameSection(section.id, n)}
+                    onRemove={() => removeSection(section.id)}
+                  />
                   <span className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">
                     {section.groups.reduce((n, g) => n + g.items.length, 0)} mvts · {section.groups.reduce((n, g) => n + g.items.reduce((m, it) => m + it.sets.length, 0), 0)} sets
                   </span>
@@ -418,6 +554,7 @@ export default function Logger() {
                       onChangeKind={changeGroupKind}
                       onRemoveItem={removeItem}
                       onSwap={(g, i) => setPickerOpen({ kind: "swap", sectionId: section.id, groupId: g, itemIndex: i })}
+                      onSwapMetric={swapMetric}
                       onToggleNotation={toggleNotation}
                       onStartRest={(seconds, label) => setRestTimer({ targetSeconds: seconds, label })}
                     />
@@ -433,6 +570,15 @@ export default function Logger() {
             </AccordionItem>
           ))}
         </Accordion>
+
+        {allowSectionEdit && (
+          <button
+            onClick={addSection}
+            className="mt-4 w-full border border-dashed hairline py-3 text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground hover:bg-secondary transition-colors duration-slow ease-swiss"
+          >
+            <Plus className="inline h-3 w-3 mr-1" /> Add section
+          </button>
+        )}
 
         <div className="mt-8 text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">
           {savedTick > 0 ? `Saved · ${savedTick} ticks` : "Auto-save every 15s"}
@@ -479,6 +625,38 @@ export default function Logger() {
 }
 
 /* ------------------ Subcomponents ------------------ */
+
+function SectionTitle({ name, editable, onRename, onRemove }: { name: string; editable: boolean; onRename: (n: string) => void; onRemove: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+  useEffect(() => setValue(name), [name]);
+  if (!editable) {
+    return <span className="font-display text-xl uppercase tracking-[-0.04em]">{name}</span>;
+  }
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => { onRename(value); setEditing(false); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.currentTarget.blur(); }
+          if (e.key === "Escape") { setValue(name); setEditing(false); }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="font-display text-xl uppercase tracking-[-0.04em] bg-transparent border-b hairline focus:border-foreground focus:outline-none"
+      />
+    );
+  }
+  return (
+    <div className="flex items-center gap-1 group" onClick={(e) => e.stopPropagation()}>
+      <span className="font-display text-xl uppercase tracking-[-0.04em]">{name}</span>
+      <button onClick={() => setEditing(true)} className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-opacity"><Pencil className="h-3 w-3" /></button>
+      <button onClick={onRemove} className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-opacity"><Trash2 className="h-3 w-3" /></button>
+    </div>
+  );
+}
 
 function SessionTimer(props: {
   accumSec: number;
@@ -533,6 +711,7 @@ function GroupBlock(props: {
   onChangeKind: (sectionId: string, groupId: string, kind: LogGroup["kind"]) => void;
   onRemoveItem: (sectionId: string, groupId: string, itemIdx: number) => void;
   onSwap: (groupId: string, itemIdx: number) => void;
+  onSwapMetric: (sectionId: string, groupId: string, itemIdx: number, oldMetric: SwappableMetric, newMetric: SwappableMetric) => void;
   onToggleNotation: (sectionId: string, groupId: string, itemIdx: number, setIdx: number, tag: string) => void;
   onStartRest: (seconds: number, label: string) => void;
 }) {
@@ -563,6 +742,7 @@ function GroupBlock(props: {
           onItemRest={(sec) => props.onItemRest(section.id, group.id, idx, sec)}
           onRemoveItem={() => props.onRemoveItem(section.id, group.id, idx)}
           onSwap={() => props.onSwap(group.id, idx)}
+          onSwapMetric={(oldM, newM) => props.onSwapMetric(section.id, group.id, idx, oldM, newM)}
           onToggleNotation={(setIdx, tag) => props.onToggleNotation(section.id, group.id, idx, setIdx, tag)}
           onStartRest={props.onStartRest}
         />
@@ -585,6 +765,7 @@ function ItemRow(props: {
   onItemRest: (sec: number) => void;
   onRemoveItem: () => void;
   onSwap: () => void;
+  onSwapMetric: (oldMetric: SwappableMetric, newMetric: SwappableMetric) => void;
   onToggleNotation: (setIdx: number, tag: string) => void;
   onStartRest: (seconds: number, label: string) => void;
 }) {
@@ -619,7 +800,15 @@ function ItemRow(props: {
             <tr>
               <th className="w-8">#</th>
               <th>Planned</th>
-              {cols.map((m) => <th key={m} className="text-right">{appConfig.metrics.labels[m]}</th>)}
+              {cols.map((m) => (
+                <th key={m} className="text-right">
+                  {(SWAPPABLE as readonly string[]).includes(m) ? (
+                    <SwapMetricHeader current={m as SwappableMetric} onSwap={(nm) => props.onSwapMetric(m as SwappableMetric, nm)} />
+                  ) : (
+                    appConfig.metrics.labels[m]
+                  )}
+                </th>
+              ))}
               <th className="w-10"></th>
               <th className="w-6"></th>
             </tr>
@@ -638,6 +827,34 @@ function ItemRow(props: {
         </table>
       </div>
     </div>
+  );
+}
+
+function SwapMetricHeader({ current, onSwap }: { current: SwappableMetric; onSwap: (m: SwappableMetric) => void }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="inline-flex items-center gap-1 hover:text-foreground transition-colors duration-slow ease-swiss border-b border-dashed hairline pb-0.5">
+          {appConfig.metrics.labels[current]}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-40 p-1">
+        <div className="text-[0.55rem] uppercase tracking-[0.14em] text-muted-foreground px-2 pt-1 pb-2">Track as</div>
+        {SWAPPABLE.map((m) => (
+          <button
+            key={m}
+            onClick={() => onSwap(m)}
+            className={cn(
+              "w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center justify-between",
+              m === current && "bg-foreground text-background hover:bg-foreground",
+            )}
+          >
+            <span>{appConfig.metrics.labels[m]}</span>
+            <span className="opacity-60 text-[0.6rem]">{appConfig.metrics.units[m]}</span>
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -693,7 +910,7 @@ function SetRow(props: {
               props.onChange(m, v === "" ? null : Number(v));
             }}
             className="w-14 text-right bg-transparent border-b hairline focus:border-foreground focus:outline-none transition-colors duration-slow ease-swiss font-mono"
-            placeholder="—"
+            placeholder={m === "weight" ? "0" : "—"}
           />
         </td>
       ))}
