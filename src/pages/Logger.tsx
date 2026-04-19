@@ -292,6 +292,37 @@ export default function Logger() {
       if (g.items.length === 0) s.groups.splice(gIdx, 1);
     });
   }
+  function toggleItemComplete(sectionId: string, groupId: string, itemIdx: number) {
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId)!;
+      const g = s.groups.find((x) => x.id === groupId)!;
+      const it = g.items[itemIdx];
+      const anyIncomplete = it.sets.some((st) => !st.actual.completed);
+      for (const st of it.sets) {
+        st.actual.completed = anyIncomplete;
+        if (st.actual.prefilled) st.actual.prefilled = false;
+      }
+    });
+  }
+  function moveItem(sectionId: string, groupId: string, itemIdx: number, dstSectionId: string) {
+    if (sectionId === dstSectionId) return;
+    updateDoc((d) => {
+      const src = d.sections.find((x) => x.id === sectionId)!;
+      const dst = d.sections.find((x) => x.id === dstSectionId);
+      if (!dst) return;
+      const gIdx = src.groups.findIndex((x) => x.id === groupId);
+      if (gIdx < 0) return;
+      const g = src.groups[gIdx];
+      const [item] = g.items.splice(itemIdx, 1);
+      if (g.items.length === 0) src.groups.splice(gIdx, 1);
+      dst.groups.push({
+        id: makeId(),
+        kind: "single",
+        items: [item],
+        restAfterRoundSeconds: item.restBetweenSetsSeconds,
+      });
+    });
+  }
   function swapMovement(target: { sectionId: string; groupId: string; itemIndex: number }, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
     updateDoc((d) => {
       const s = d.sections.find((x) => x.id === target.sectionId)!;
