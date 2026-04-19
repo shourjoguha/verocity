@@ -9,7 +9,7 @@
  *  - Swappable metric column headers (reps ↔ time ↔ distance)
  *  - Custom workout mode with editable section names
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { format } from "date-fns";
 import { TopBar } from "@/components/TopBar";
@@ -25,9 +25,10 @@ import { appConfig, type Metric, type SwappableMetric } from "@/config/app.confi
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil } from "lucide-react";
+import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil, ChevronUp, ChevronDown, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
+import { loadHistory, prefillFromHistory } from "@/lib/lastPerformance";
 import { cn } from "@/lib/utils";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -98,7 +99,9 @@ export default function Logger() {
           sw.setSeconds(data.total_seconds ?? 0);
         }
       } else if (isCustomMode) {
-        setDoc(buildBlankDocument());
+        const blank = buildBlankDocument();
+        const history = await loadHistory(user.id);
+        setDoc(prefillFromHistory(blank, history));
         setDayKey("Custom workout");
         setWeekNumber(0);
         setActivityType("strength");
@@ -119,7 +122,8 @@ export default function Logger() {
         setDayKey(`${planDay.dayName} — ${planDay.type}`);
         setWeekNumber(week || isoWeekIndexFromStart(planRow.start_date));
         const built = buildLogDocument(plan, planDay, week || isoWeekIndexFromStart(planRow.start_date));
-        setDoc(built);
+        const history = await loadHistory(user.id);
+        setDoc(prefillFromHistory(built, history));
         const inferred = appConfig.activity.dayTypeTag(planDay.type);
         setActivityType(inferred);
         setTags([inferred]);
@@ -228,6 +232,8 @@ export default function Logger() {
       const g = s.groups.find((x) => x.id === groupId)!;
       const it = g.items[itemIdx];
       it.sets[setIdx].actual[metric] = value;
+      // First user edit promotes prefilled values to confirmed.
+      if (it.sets[setIdx].actual.prefilled) it.sets[setIdx].actual.prefilled = false;
     });
   }
   function toggleSetComplete(sectionId: string, groupId: string, itemIdx: number, setIdx: number) {
@@ -284,6 +290,37 @@ export default function Logger() {
       const g = s.groups[gIdx];
       g.items.splice(itemIdx, 1);
       if (g.items.length === 0) s.groups.splice(gIdx, 1);
+    });
+  }
+  function toggleItemComplete(sectionId: string, groupId: string, itemIdx: number) {
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId)!;
+      const g = s.groups.find((x) => x.id === groupId)!;
+      const it = g.items[itemIdx];
+      const anyIncomplete = it.sets.some((st) => !st.actual.completed);
+      for (const st of it.sets) {
+        st.actual.completed = anyIncomplete;
+        if (st.actual.prefilled) st.actual.prefilled = false;
+      }
+    });
+  }
+  function moveItem(sectionId: string, groupId: string, itemIdx: number, dstSectionId: string) {
+    if (sectionId === dstSectionId) return;
+    updateDoc((d) => {
+      const src = d.sections.find((x) => x.id === sectionId)!;
+      const dst = d.sections.find((x) => x.id === dstSectionId);
+      if (!dst) return;
+      const gIdx = src.groups.findIndex((x) => x.id === groupId);
+      if (gIdx < 0) return;
+      const g = src.groups[gIdx];
+      const [item] = g.items.splice(itemIdx, 1);
+      if (g.items.length === 0) src.groups.splice(gIdx, 1);
+      dst.groups.push({
+        id: makeId(),
+        kind: "single",
+        items: [item],
+        restAfterRoundSeconds: item.restBetweenSetsSeconds,
+      });
     });
   }
   function swapMovement(target: { sectionId: string; groupId: string; itemIndex: number }, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
@@ -542,17 +579,20 @@ export default function Logger() {
                     <GroupBlock
                       key={group.id}
                       section={section}
+                      allSections={doc.sections}
                       group={group}
                       selected={selected}
                       onSelectToggle={toggleSelect}
                       onSetActual={setActual}
                       onToggleComplete={toggleSetComplete}
+                      onToggleItemComplete={toggleItemComplete}
                       onAddSet={addSet}
                       onRemoveSet={removeSet}
                       onItemRest={setItemRest}
                       onGroupRest={setGroupRest}
                       onChangeKind={changeGroupKind}
                       onRemoveItem={removeItem}
+                      onMoveItem={moveItem}
                       onSwap={(g, i) => setPickerOpen({ kind: "swap", sectionId: section.id, groupId: g, itemIndex: i })}
                       onSwapMetric={swapMetric}
                       onToggleNotation={toggleNotation}
@@ -699,23 +739,26 @@ function SessionTimer(props: {
 
 function GroupBlock(props: {
   section: LogSection;
+  allSections: LogSection[];
   group: LogGroup;
   selected: Set<string>;
   onSelectToggle: (key: string) => void;
   onSetActual: (sectionId: string, groupId: string, itemIdx: number, setIdx: number, metric: Metric, value: number | null) => void;
   onToggleComplete: (sectionId: string, groupId: string, itemIdx: number, setIdx: number) => void;
+  onToggleItemComplete: (sectionId: string, groupId: string, itemIdx: number) => void;
   onAddSet: (sectionId: string, groupId: string, itemIdx: number) => void;
   onRemoveSet: (sectionId: string, groupId: string, itemIdx: number, setIdx: number) => void;
   onItemRest: (sectionId: string, groupId: string, itemIdx: number, sec: number) => void;
   onGroupRest: (sectionId: string, groupId: string, key: "restAfterRoundSeconds" | "restWithinSeconds", sec: number) => void;
   onChangeKind: (sectionId: string, groupId: string, kind: LogGroup["kind"]) => void;
   onRemoveItem: (sectionId: string, groupId: string, itemIdx: number) => void;
+  onMoveItem: (sectionId: string, groupId: string, itemIdx: number, dstSectionId: string) => void;
   onSwap: (groupId: string, itemIdx: number) => void;
   onSwapMetric: (sectionId: string, groupId: string, itemIdx: number, oldMetric: SwappableMetric, newMetric: SwappableMetric) => void;
   onToggleNotation: (sectionId: string, groupId: string, itemIdx: number, setIdx: number, tag: string) => void;
   onStartRest: (seconds: number, label: string) => void;
 }) {
-  const { section, group } = props;
+  const { section, group, allSections } = props;
   const isGrouped = group.kind !== "single";
   return (
     <div className={`border ${isGrouped ? "border-foreground" : "hairline"} p-2`}>
@@ -732,15 +775,17 @@ function GroupBlock(props: {
       {group.items.map((item, idx) => (
         <ItemRow
           key={`${group.id}-${idx}`}
-          section={section} group={group} item={item} idx={idx}
+          section={section} allSections={allSections} group={group} item={item} idx={idx}
           selected={props.selected.has(keyOf(section.id, group.id, idx))}
           onSelectToggle={() => props.onSelectToggle(keyOf(section.id, group.id, idx))}
           onSetActual={(setIdx, metric, value) => props.onSetActual(section.id, group.id, idx, setIdx, metric, value)}
           onToggleComplete={(setIdx) => props.onToggleComplete(section.id, group.id, idx, setIdx)}
+          onToggleItemComplete={() => props.onToggleItemComplete(section.id, group.id, idx)}
           onAddSet={() => props.onAddSet(section.id, group.id, idx)}
           onRemoveSet={(setIdx) => props.onRemoveSet(section.id, group.id, idx, setIdx)}
           onItemRest={(sec) => props.onItemRest(section.id, group.id, idx, sec)}
           onRemoveItem={() => props.onRemoveItem(section.id, group.id, idx)}
+          onMoveItem={(dstSectionId) => props.onMoveItem(section.id, group.id, idx, dstSectionId)}
           onSwap={() => props.onSwap(group.id, idx)}
           onSwapMetric={(oldM, newM) => props.onSwapMetric(section.id, group.id, idx, oldM, newM)}
           onToggleNotation={(setIdx, tag) => props.onToggleNotation(section.id, group.id, idx, setIdx, tag)}
@@ -753,6 +798,7 @@ function GroupBlock(props: {
 
 function ItemRow(props: {
   section: LogSection;
+  allSections: LogSection[];
   group: LogGroup;
   item: LogItem;
   idx: number;
@@ -760,18 +806,29 @@ function ItemRow(props: {
   onSelectToggle: () => void;
   onSetActual: (setIdx: number, metric: Metric, value: number | null) => void;
   onToggleComplete: (setIdx: number) => void;
+  onToggleItemComplete: () => void;
   onAddSet: () => void;
   onRemoveSet: (setIdx: number) => void;
   onItemRest: (sec: number) => void;
   onRemoveItem: () => void;
+  onMoveItem: (dstSectionId: string) => void;
   onSwap: () => void;
   onSwapMetric: (oldMetric: SwappableMetric, newMetric: SwappableMetric) => void;
   onToggleNotation: (setIdx: number, tag: string) => void;
   onStartRest: (seconds: number, label: string) => void;
 }) {
-  const { item, selected, onSelectToggle, onStartRest } = props;
+  const { item, section, allSections, selected, onSelectToggle, onStartRest } = props;
   const lp = useLongPress(onSelectToggle, undefined);
   const cols = METRIC_ORDER.filter((m) => item.metrics.includes(m));
+
+  const totalSets = item.sets.length;
+  const completedCount = item.sets.filter((s) => s.actual.completed).length;
+  const allComplete = totalSets > 0 && completedCount === totalSets;
+  const noneComplete = completedCount === 0;
+  const lastIsComplete = totalSets > 0 && !!item.sets[totalSets - 1].actual.completed;
+  // Show ghost row when last set just completed but not all sets are bulk-complete.
+  const showGhostRow = lastIsComplete && !allComplete;
+
   return (
     <div className={`border-t hairline first:border-t-0 ${selected ? "bg-secondary" : ""}`}>
       <div className="flex items-center justify-between gap-2 py-2 px-1" {...lp}>
@@ -785,12 +842,14 @@ function ItemRow(props: {
             <PopoverTrigger asChild>
               <button className="p-1 text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss" title="Options"><Settings2 className="h-3.5 w-3.5" /></button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-44 p-1">
+            <PopoverContent align="end" className="w-52 p-1">
               <button onClick={props.onSwap} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Replace className="h-3 w-3" /> Swap</button>
               <button onClick={props.onAddSet} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Plus className="h-3 w-3" /> Add set</button>
+              <MoveToSubmenu sections={allSections} currentSectionId={section.id} onMove={props.onMoveItem} />
               <button onClick={props.onRemoveItem} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Trash2 className="h-3 w-3" /> Remove</button>
             </PopoverContent>
           </Popover>
+          <ItemCompleteCheckbox allComplete={allComplete} noneComplete={noneComplete} onClick={props.onToggleItemComplete} />
         </div>
       </div>
 
@@ -825,7 +884,62 @@ function ItemRow(props: {
             ))}
           </tbody>
         </table>
+        {showGhostRow && (
+          <button
+            onClick={props.onAddSet}
+            className="w-full border-t border-dashed hairline py-1 text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground/60 hover:text-foreground hover:bg-secondary transition-colors"
+          >
+            <Plus className="inline h-2.5 w-2.5 mr-1" /> add set
+          </button>
+        )}
       </div>
+    </div>
+  );
+}
+
+function ItemCompleteCheckbox({ allComplete, noneComplete, onClick }: { allComplete: boolean; noneComplete: boolean; onClick: () => void }) {
+  const indeterminate = !allComplete && !noneComplete;
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "h-5 w-5 border flex items-center justify-center transition-colors",
+        allComplete ? "bg-foreground border-foreground text-background" : "hairline hover:bg-secondary",
+      )}
+      title={allComplete ? "Mark all incomplete" : "Mark all complete"}
+      aria-label="Toggle all sets complete"
+    >
+      {allComplete && <span className="text-[0.7rem] leading-none">✓</span>}
+      {indeterminate && <span className="block h-0.5 w-2.5 bg-foreground" />}
+    </button>
+  );
+}
+
+function MoveToSubmenu({ sections, currentSectionId, onMove }: { sections: LogSection[]; currentSectionId: string; onMove: (dstId: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const others = sections.filter((s) => s.id !== currentSectionId);
+  if (others.length === 0) return null;
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"
+      >
+        <ArrowRightLeft className="h-3 w-3" /> Move to…
+      </button>
+      {open && (
+        <div className="border-t hairline pl-2">
+          {others.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => onMove(s.id)}
+              className="w-full text-left px-3 py-1.5 text-[0.65rem] uppercase tracking-[0.1em] hover:bg-secondary truncate"
+            >
+              → {s.name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -858,6 +972,92 @@ function SwapMetricHeader({ current, onSwap }: { current: SwappableMetric; onSwa
   );
 }
 
+function StepperInput(props: {
+  value: number | null | undefined;
+  step: number;
+  placeholder?: string;
+  prefilled?: boolean;
+  onChange: (v: number | null) => void;
+}) {
+  const { value, step, placeholder, prefilled, onChange } = props;
+  const [hover, setHover] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const show = hover || focused;
+  const decimals = step < 1 ? 1 : 0;
+  const adjust = useCallback((dir: 1 | -1) => {
+    const cur = value ?? 0;
+    const next = Math.max(0, Number((cur + dir * step).toFixed(decimals)));
+    onChange(next);
+  }, [value, step, onChange, decimals]);
+
+  // Long-press accelerator
+  const repeatRef = useRef<number | null>(null);
+  function startRepeat(dir: 1 | -1) {
+    adjust(dir);
+    let delay = 250;
+    const tick = () => {
+      adjust(dir);
+      delay = Math.max(40, delay * 0.85);
+      repeatRef.current = window.setTimeout(tick, delay);
+    };
+    repeatRef.current = window.setTimeout(tick, delay);
+  }
+  function stopRepeat() {
+    if (repeatRef.current) { window.clearTimeout(repeatRef.current); repeatRef.current = null; }
+  }
+  useEffect(() => () => stopRepeat(), []);
+
+  return (
+    <div className="relative inline-block" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <input
+        type="number"
+        inputMode="decimal"
+        step={step}
+        value={value ?? ""}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onChange={(e) => {
+          const v = e.target.value;
+          onChange(v === "" ? null : Number(v));
+        }}
+        className={cn(
+          "w-16 text-right bg-transparent border-b hairline focus:border-foreground focus:outline-none transition-colors duration-slow ease-swiss font-mono pr-4",
+          prefilled && "italic text-muted-foreground",
+        )}
+        placeholder={placeholder}
+      />
+      {show && (
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex flex-col">
+          <button
+            type="button"
+            onMouseDown={(e) => { e.preventDefault(); startRepeat(1); }}
+            onMouseUp={stopRepeat} onMouseLeave={stopRepeat}
+            onTouchStart={(e) => { e.preventDefault(); startRepeat(1); }}
+            onTouchEnd={stopRepeat}
+            className="h-3 w-3 flex items-center justify-center text-muted-foreground hover:text-foreground"
+            tabIndex={-1}
+            aria-label="Increase"
+          >
+            <ChevronUp className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            onMouseDown={(e) => { e.preventDefault(); startRepeat(-1); }}
+            onMouseUp={stopRepeat} onMouseLeave={stopRepeat}
+            onTouchStart={(e) => { e.preventDefault(); startRepeat(-1); }}
+            onTouchEnd={stopRepeat}
+            className="h-3 w-3 flex items-center justify-center text-muted-foreground hover:text-foreground"
+            tabIndex={-1}
+            aria-label="Decrease"
+          >
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SetRow(props: {
   idx: number;
   set: LogSet;
@@ -869,8 +1069,49 @@ function SetRow(props: {
   onStartRest: () => void;
 }) {
   const { idx, set, cols } = props;
+  const [dx, setDx] = useState(0);
+  const [revealed, setRevealed] = useState(false);
+  const startX = useRef<number | null>(null);
+  const REVEAL = 72;
+  const THRESHOLD = 40;
+
+  function onPointerDown(e: React.PointerEvent<HTMLTableRowElement>) {
+    const target = e.target as HTMLElement;
+    if (target.closest("input,button")) return;
+    startX.current = e.clientX;
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* noop */ }
+  }
+  function onPointerMove(e: React.PointerEvent<HTMLTableRowElement>) {
+    if (startX.current == null) return;
+    const delta = e.clientX - startX.current;
+    const base = revealed ? -REVEAL : 0;
+    const next = Math.min(0, Math.max(-REVEAL, base + delta));
+    setDx(next);
+  }
+  function onPointerUp(e: React.PointerEvent<HTMLTableRowElement>) {
+    if (startX.current == null) return;
+    const delta = e.clientX - startX.current;
+    startX.current = null;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ }
+    if (revealed) {
+      if (delta > THRESHOLD) { setRevealed(false); setDx(0); }
+      else { setDx(-REVEAL); }
+    } else {
+      if (delta < -THRESHOLD) { setRevealed(true); setDx(-REVEAL); }
+      else { setDx(0); }
+    }
+  }
+  function closeSwipe() { setRevealed(false); setDx(0); }
+
   return (
-    <tr className={set.actual.completed ? "opacity-60" : ""}>
+    <tr
+      className={cn("relative", set.actual.completed && "opacity-60")}
+      style={{ transform: `translateX(${dx}px)`, transition: startX.current == null ? "transform 200ms cubic-bezier(0.22,1,0.36,1)" : undefined }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
       <td className="font-mono text-xs">{idx + 1}</td>
       <td className="text-xs text-muted-foreground whitespace-nowrap">
         <span className="font-mono">{set.planned?.raw ?? "—"}</span>
@@ -898,22 +1139,20 @@ function SetRow(props: {
           </PopoverContent>
         </Popover>
       </td>
-      {cols.map((m) => (
-        <td key={m} className="text-right">
-          <input
-            type="number"
-            inputMode="decimal"
-            step={m === "rpe" ? 0.5 : m === "weight" ? 0.5 : 1}
-            value={(set.actual[m] as number | null | undefined) ?? ""}
-            onChange={(e) => {
-              const v = e.target.value;
-              props.onChange(m, v === "" ? null : Number(v));
-            }}
-            className="w-14 text-right bg-transparent border-b hairline focus:border-foreground focus:outline-none transition-colors duration-slow ease-swiss font-mono"
-            placeholder={m === "weight" ? "0" : "—"}
-          />
-        </td>
-      ))}
+      {cols.map((m) => {
+        const step = m === "rpe" || m === "weight" ? 0.5 : 1;
+        return (
+          <td key={m} className="text-right">
+            <StepperInput
+              value={set.actual[m] as number | null | undefined}
+              step={step}
+              prefilled={set.actual.prefilled}
+              placeholder={m === "weight" ? "0" : "—"}
+              onChange={(v) => props.onChange(m, v)}
+            />
+          </td>
+        );
+      })}
       <td className="text-right">
         <button
           onClick={props.onStartRest}
@@ -923,12 +1162,25 @@ function SetRow(props: {
           rest
         </button>
       </td>
-      <td className="text-right">
+      <td className="text-right relative">
         <button
           onClick={props.onToggleComplete}
           className={`h-4 w-4 border ${set.actual.completed ? "bg-foreground border-foreground" : "hairline"}`}
           aria-label="Toggle complete"
         />
+        <div
+          aria-hidden={!revealed}
+          className="absolute top-0 left-full h-full flex items-center justify-center"
+          style={{ width: REVEAL, backgroundColor: "hsl(0 50% 27%)" }}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); props.onRemove(); closeSwipe(); }}
+            className="text-background h-full w-full flex items-center justify-center hover:bg-black/10 transition-colors"
+            aria-label="Delete set"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
       </td>
     </tr>
   );

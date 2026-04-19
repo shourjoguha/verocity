@@ -54,6 +54,8 @@ export interface LogSetActual {
   distance?: number | null;
   time?: number | null;
   completed?: boolean;
+  /** True when fields were pre-filled from history; first edit clears this. */
+  prefilled?: boolean;
 }
 export interface LogSet {
   planned?: PlannedSet | null;
