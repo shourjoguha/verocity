@@ -308,16 +308,23 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const points = useMemo(() => buildTimeline(plan, logs), [plan, logs]);
   const todayIndex = points.findIndex((p) => p.isToday);
+  // Anchor scroll to most-recent done log if any, else today
+  const anchorIndex = useMemo(() => {
+    for (let i = points.length - 1; i >= 0; i--) {
+      if (points[i].state === "done") return i;
+    }
+    return todayIndex;
+  }, [points, todayIndex]);
   const [peekIndex, setPeekIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || todayIndex < 0) return;
-    // Each bar is 6px wide + 2px gap = 8px
+    if (!el || anchorIndex < 0) return;
+    // Each bar is 6px wide + 2px gap = 8px. Right-align with ~20% padding so upcoming peeks in.
     const bw = 8;
-    const target = todayIndex * bw - el.clientWidth / 2;
+    const target = anchorIndex * bw - el.clientWidth * 0.8;
     el.scrollTo({ left: Math.max(0, target), behavior: "auto" });
-  }, [todayIndex]);
+  }, [anchorIndex]);
 
   // Outside-click dismiss for the peek popover
   useEffect(() => {
@@ -349,10 +356,8 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
               style.borderWidth = "1px";
               style.borderStyle = "solid";
               style.backgroundColor = "transparent";
-            } else if (p.state === "skipped") {
-              style.backgroundColor = "hsl(var(--muted))";
             } else {
-              // rest
+              // blank (rest / off-plan / past unplanned)
               style.backgroundColor = "hsl(var(--muted))";
               style.opacity = 0.4;
             }
