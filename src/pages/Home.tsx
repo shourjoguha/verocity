@@ -219,7 +219,7 @@ export default function Home() {
 
 type TimelinePoint = {
   date: string;
-  state: "done" | "planned" | "rest" | "skipped";
+  state: "done" | "planned" | "blank";
   color: string;
   isToday: boolean;
   label: string;
@@ -234,23 +234,34 @@ function abbrev(s: string): string {
 }
 
 function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
-  const start = plan.start_date ? new Date(plan.start_date + "T00:00:00") : new Date();
-  const end = plan.end_date
-    ? new Date(plan.end_date + "T00:00:00")
-    : new Date(start.getTime() + 16 * 7 * 86_400_000);
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayStr = ymd(today);
-  const horizon = new Date(today.getTime() + 10 * 86_400_000);
 
-  // Index logs by date (latest done log per date wins)
+  // Index completed/in-progress logs by date (most recent wins for that date).
   const logByDate = new Map<string, LogRow>();
+  const doneDates: string[] = [];
   for (const l of logs) {
     if (l.status === "done" || l.status === "in_progress") {
-      if (!logByDate.has(l.log_date)) logByDate.set(l.log_date, l);
+      if (!logByDate.has(l.log_date)) {
+        logByDate.set(l.log_date, l);
+        doneDates.push(l.log_date);
+      }
     }
   }
+  // logs are ordered desc by log_date already
+  // Window start: 30th most-recent done log date, fallback today-30d
+  let start: Date;
+  if (doneDates.length > 0) {
+    const anchor = doneDates[Math.min(doneDates.length - 1, 29)];
+    start = new Date(anchor + "T00:00:00");
+  } else {
+    start = new Date(today.getTime() - 30 * 86_400_000);
+  }
+  // Window end: plan.end_date if set, else today + 30d
+  const end = plan.end_date
+    ? new Date(plan.end_date + "T00:00:00")
+    : new Date(today.getTime() + 30 * 86_400_000);
 
   // Index plan days by day name
   const planByDayName = new Map<string, PlanDay>();
@@ -271,22 +282,16 @@ function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
 
     if (log) {
       state = "done";
-      color = primaryTagColor(log.tags);
+      color = colorForLog(log);
       const dn = (log.day_key ?? "").split("—")[1]?.trim() ?? log.day_key ?? "Done";
       label = abbrev(dn) || "Done";
-    } else if (planDay) {
+    } else if (planDay && cursor.getTime() >= today.getTime()) {
       const tag = appConfig.activity.dayTypeTag(planDay.type);
       color = appConfig.activity.tagColors[tag] ?? appConfig.activity.fallbackColor;
       label = abbrev(planDay.type) || planDay.type.slice(0, 5);
-      if (cursor.getTime() < today.getTime()) {
-        state = "skipped";
-      } else if (cursor.getTime() <= horizon.getTime()) {
-        state = "planned";
-      } else {
-        state = "planned";
-      }
+      state = "planned";
     } else {
-      state = "rest";
+      state = "blank";
       color = appConfig.activity.fallbackColor;
       label = "Rest";
     }
