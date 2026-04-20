@@ -1,79 +1,51 @@
 
 
-## Fix: "Save as done" not persisting status
+## Fix: Plan Progress bars — anchor to logs, not plan dates
 
-### Root cause
+### Why it's broken now
 
-In `Logger.tsx`, `saveAsDone()` calls `setStatus("done")` / `setStartedAt` / `setEndedAt`, then schedules `saveLog(true)` via `setTimeout(0)` followed immediately by `nav("/")`. Two problems:
+`buildTimeline` walks dates from `plan.start_date` → `plan.end_date`. If the plan has `start_date = null` (the network response shows it's missing), the code falls back to `new Date()` (today) as the start, so **all past logs (Apr 18, Apr 19) are never visited** by the cursor and never rendered as solid bars. The recents and Calendar work because they query logs directly without a plan window.
 
-1. **Stale closure** — `saveLog` reads `status`, `startedAt`, `endedAt` from the component's React state at the time the timeout fires. React state updates from `saveAsDone` aren't guaranteed flushed before the timeout callback, so the PATCH body still contains `"status":"planned"` (confirmed in the network log: `PATCH …status:"planned"`).
-2. **Nav races the await** — `nav("/")` runs synchronously after scheduling the save, unmounting the component while the PATCH is in flight.
+Additionally the timeline reads from `allLogs` which is correctly refetched on realtime/visibility, but the rendering window doesn't include log dates outside `[start..end]`.
 
-DB confirms the row is still `status=planned`. That's why:
-- Calendar bar shows (it includes everything `≠ cancelled`) but the "This month" list label says `planned`.
-- Home recents (filters `in (done, in_progress)`) shows nothing.
-- Home progress timeline (same filter) shows the slot as planned/skipped instead of solid.
+### New behavior (per user spec)
 
-### Fix
+A horizontal scrollable strip of day-bars where:
 
-Rewrite `saveAsDone` to bypass React state entirely and PATCH with explicit values, then navigate after the await resolves:
+- **Solid colored bar** = a saved log on that date (color from primary tag, same logic as Calendar's `colorForLog`).
+- **Hollow colored bar** = future date that matches a planned `PlanDay.dayName`, up through plan end (or +30 days if no plan end).
+- **Blank/muted bar** = no log + not planned (rest, gap, off-plan day).
+- **Today** marker: subtle outline on the today bar.
 
-```ts
-async function saveAsDone() {
-  if (!user || !doc) return;
-  const noon = new Date(logDate);
-  noon.setHours(12, 0, 0, 0);
-  const iso = noon.toISOString();
-  const payload = {
-    owner_user_id: user.id,
-    plan_id: planId,
-    day_key: dayKey,
-    week_number: weekNumber || null,
-    status: "done",
-    started_at: startedAt ?? iso,
-    ended_at: iso,
-    total_seconds: accumSec,
-    data: doc as never,
-    log_date: format(logDate, "yyyy-MM-dd"),
-    activity_type: activityType,
-    tags,
-  };
-  if (logId) {
-    const { error } = await supabase.from("workout_logs").update(payload).eq("id", logId);
-    if (error) { toast.error("Save failed"); return; }
-  } else {
-    const { data, error } = await supabase.from("workout_logs").insert([payload]).select("id").single();
-    if (error || !data) { toast.error("Save failed"); return; }
-  }
-  // Mirror state so any rendering before nav is consistent
-  setStatus("done");
-  setStartedAt(payload.started_at);
-  setEndedAt(payload.ended_at);
-  toast.success("Saved as done");
-  nav("/");
-}
-```
+**Window**:
+- Left edge = the date of the **30th-most-recent completed log** (or earliest log if fewer than 30, or 30 days before today if no logs).
+- Right edge = `plan.end_date` if set, else `today + 30 days`.
+- This guarantees the last 30 completed logs are always represented, with rest/inactive days as blanks between, and upcoming planned sessions extending to the right.
 
-Apply the same pattern (await before nav) to `finishSession` for consistency — currently `finishSession` calls `setStatus("done")` then `void saveLog(true)` without awaiting, suffering the same race when followed by navigation. Make it `async`, await `saveLog`, then nav.
+**Scroll**: auto-scroll on mount so the **most recent completed log** (or today if none) is centered/right-aligned in view. Scroll left reveals older logs, scroll right reveals upcoming planned sessions.
 
-### One-time DB cleanup
+### Implementation (`src/pages/Home.tsx`)
 
-The existing log `57005629-...` is stuck at `planned` even though the user's sets are filled in and they tapped "Save as done". After the code fix, future saves work — but this row needs to be flipped to `done` so the user sees it on Home/Recents immediately. Run a one-line migration:
-
-```sql
-update public.workout_logs
-set status = 'done',
-    started_at = coalesce(started_at, (log_date::timestamp + interval '12 hours') at time zone 'UTC'),
-    ended_at   = coalesce(ended_at,   (log_date::timestamp + interval '12 hours') at time zone 'UTC')
-where id = '57005629-b01d-462c-9cb6-22f226f1a8e3';
-```
+1. **Use `allLogs` as the source of truth** for both completed bars and window calculation. The existing `allLogs` fetch + realtime subscription already update correctly — confirmed by the network log showing both Apr 18 + Apr 19 done.
+2. **Rewrite `buildTimeline(plan, logs)`**:
+   - Build `logByDate` from all `done`/`in_progress` logs in `allLogs`.
+   - Compute window start: take the 30th most-recent completed-log date; fallback to `today - 30d`.
+   - Compute window end: `plan.end_date` (if any) else `today + 30d`.
+   - Walk every date in `[start..end]`. For each:
+     - If a log exists → `state: "done"`, color from `colorForLog(log)` (mirror Calendar's helper exactly).
+     - Else if date ≥ today AND matches a `PlanDay.dayName` → `state: "planned"`, color from `dayTypeTag`.
+     - Else → `state: "blank"` (muted grey, low opacity).
+   - Drop the old `"skipped"` state — past unsaved planned days now just render blank, matching the user's "blanks for inactive days" intent.
+3. **Color helper**: extract `colorForLog` to match Calendar so a strength log on Home shows the same hue as on Calendar. Currently Home uses `primaryTagColor(tags)` which only checks tags; align it with Calendar's `tags[0] ?? activity_type ?? "strength"` fallback.
+4. **Scroll anchor**: change the `useEffect` from "scroll to today" to "scroll to most-recent-done (or today if none)", right-aligned with ~20% padding so a few upcoming hollow bars peek into view.
+5. **Peek popover**: keep current click-to-peek behavior; for done bars show the abbreviated `day_key` second half (e.g. "UppA"); for planned bars show abbreviated plan day type; for blanks show "Rest" or just the date.
+6. **Realtime / refresh**: no change needed — `allLogs` is already wired to the realtime channel and visibility/focus refetch.
 
 ### Files touched
 
 ```
-src/pages/Logger.tsx                          — rewrite saveAsDone, await finishSession
-supabase/migrations/<new>.sql                 — one-shot fix the stuck row
+src/pages/Home.tsx   — rewrite buildTimeline window logic, align color helper with Calendar, retarget scroll anchor
 ```
 
-No schema or RLS changes. Realtime subscription on `workout_logs` already added previously will push the corrected status to the open Home tab the moment the migration runs.
+No DB or config changes. No changes to Calendar or Logger.
 
