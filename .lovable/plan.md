@@ -1,33 +1,45 @@
 
 
-## Plan
+## Fix Plan card header layout
 
-### Issue 1 — EchoHeadline indentation
-Add `padding-left: 0.16em` to `.echo-headline` in `src/index.css` to compensate for the leftmost echo layer offset. Headlines on Plan, Home, Library, Logger, etc. will visually align with their `px-4` container content.
+Restructure the `AccordionTrigger` content in `src/pages/Plan.tsx` (lines 278–284) to a two-column layout:
 
-### Issue 2 — Strip day-of-week from session names
-Mirror the **exact same logic** already used by the "Pick a day" rail. That section displays `PlanDay.type` (e.g., "Lower A (Squat-Dominant)") — the part **after** the `—` in `day_key`. The codebase already does this split inline in `Home.tsx:107` and `Plan.tsx:72` (`day_key.split("—")[0]` for the day-name half, `[1]` for the type half — see Home.tsx:286 which already uses `[1]` for the timeline label).
+- **Left column** (flex-1, left-aligned): Session name (e.g., "Lower A (Squat-Dominant)")
+- **Right column** (shrink-0, right-aligned, stacked vertically): Day of week on top, "Last: W1" chip below
 
-**Add helper** in `src/lib/utils.ts` consistent with that pattern:
-```ts
-export function sessionTypeFromDayKey(dayKey: string | null): string {
-  if (!dayKey) return "Session";
-  const parts = dayKey.split("—");
-  return (parts[1] ?? parts[0]).trim() || "Session";
-}
+### Changes
+
+1. **Reduce session name font size by ~50%**: `text-xl` (1.25rem) → `text-sm` (0.875rem). Keep `font-display`, `uppercase`, `tracking-[-0.04em]`. With smaller text the name fits on one line cleanly.
+
+2. **Left-align session name**: Wrap in a `flex-1 min-w-0 text-left` container so it never centers and truncates/wraps left-aligned if needed.
+
+3. **Stack metadata top-right**: Replace the inline day + chip with a `flex flex-col items-end gap-1 shrink-0` column:
+   - Day of week (existing styling: `text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground`)
+   - `Last: W1` chip below it (only when `lastWeek` exists)
+
+4. Keep the drag handle (edit mode) on the far left of the left column.
+
+### Snippet (replaces lines 278–285)
+
+```tsx
+<AccordionTrigger className="py-3 hover:no-underline">
+  <div className="flex items-start justify-between gap-3 w-full">
+    <div className="flex items-center gap-2 flex-1 min-w-0 text-left">
+      {editMode && <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab shrink-0" />}
+      <span className="font-display text-sm uppercase tracking-[-0.04em]">{day.type}</span>
+    </div>
+    <div className="flex flex-col items-end gap-1 shrink-0">
+      <span className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">{day.dayName}</span>
+      {props.lastWeek && <span className="chip">Last: W{props.lastWeek}</span>}
+    </div>
+  </div>
+</AccordionTrigger>
 ```
-
-**Apply to display sites** (replace `l.day_key ?? "Session"`):
-- `src/pages/Home.tsx:173` — Recent list item title
-- `src/pages/Calendar.tsx:106, 107, 126` — bar `aria-label`/`title` + this-month list title
-
-`Logger.tsx` is **not** changed — it edits/uses the full `day_key` value internally. Storage format unchanged so `lastByDay` indexing (which splits on `—`[0]) keeps working.
 
 ### Files touched
 ```
-src/index.css           — .echo-headline padding-left: 0.16em
-src/lib/utils.ts        — add sessionTypeFromDayKey() helper
-src/pages/Home.tsx      — Recent list uses helper
-src/pages/Calendar.tsx  — bar labels + month list use helper
+src/pages/Plan.tsx — AccordionTrigger inner layout (lines 278–285)
 ```
+
+No other files affected.
 
