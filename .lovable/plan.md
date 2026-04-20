@@ -1,51 +1,38 @@
 
 
-## Fix: Plan Progress bars — anchor to logs, not plan dates
+## Fix: Today marker + solid bars — timezone & most-recent-log logic
 
-### Why it's broken now
+### Root cause
 
-`buildTimeline` walks dates from `plan.start_date` → `plan.end_date`. If the plan has `start_date = null` (the network response shows it's missing), the code falls back to `new Date()` (today) as the start, so **all past logs (Apr 18, Apr 19) are never visited** by the cursor and never rendered as solid bars. The recents and Calendar work because they query logs directly without a plan window.
+`ymd()` uses `d.toISOString().slice(0,10)` which converts to **UTC**. For users west of UTC (e.g. user is presumably in a -hours timezone), `ymd(new Date())` returns **tomorrow's** date string. Result:
+- The `isToday` outline lands one bar to the right of the actual "today" column.
+- `cursor.getTime() >= today.getTime()` comparison is also skewed — Apr 18/19 logs (local dates) get compared against a today computed in UTC, so they may fall on the "future" side and render as hollow planned bars instead of solid done bars.
+- Conversely the log_date strings stored in the DB are local-date strings (e.g. `"2026-04-19"`), so when the cursor walks UTC dates, `logByDate.get(dateStr)` may miss matches.
 
-Additionally the timeline reads from `allLogs` which is correctly refetched on realtime/visibility, but the rendering window doesn't include log dates outside `[start..end]`.
+The Calendar uses a **local** ymd formatter (`d.getFullYear()/getMonth()+1/getDate()`), which is why Calendar shows the bars correctly — Home is the only file with the UTC bug.
 
-### New behavior (per user spec)
+Plus: when multiple logs share a date, the current loop keeps the **first** entry seen, which after `order("log_date", desc)` is non-deterministic for tiebreakers — should explicitly keep the **most recently created** log.
 
-A horizontal scrollable strip of day-bars where:
+### Fix (`src/pages/Home.tsx`)
 
-- **Solid colored bar** = a saved log on that date (color from primary tag, same logic as Calendar's `colorForLog`).
-- **Hollow colored bar** = future date that matches a planned `PlanDay.dayName`, up through plan end (or +30 days if no plan end).
-- **Blank/muted bar** = no log + not planned (rest, gap, off-plan day).
-- **Today** marker: subtle outline on the today bar.
+1. **Replace `ymd(d)`** with local-date formatter matching Calendar:
+   ```ts
+   function ymd(d: Date) {
+     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+   }
+   ```
 
-**Window**:
-- Left edge = the date of the **30th-most-recent completed log** (or earliest log if fewer than 30, or 30 days before today if no logs).
-- Right edge = `plan.end_date` if set, else `today + 30 days`.
-- This guarantees the last 30 completed logs are always represented, with rest/inactive days as blanks between, and upcoming planned sessions extending to the right.
+2. **Most-recent-log per date**: change query in `fetchAll` for `allLogsData` to also order by `created_at desc` after `log_date desc` so when iterating, the first match per date is the most recently saved. Update `buildTimeline` log-indexing loop to reflect "most recent wins" explicitly (current `if (!logByDate.has)` already keeps first — so just ensure ordering puts newest first).
 
-**Scroll**: auto-scroll on mount so the **most recent completed log** (or today if none) is centered/right-aligned in view. Scroll left reveals older logs, scroll right reveals upcoming planned sessions.
+3. **Today bar styling**: keep the `isToday` outline. The fix in (1) makes it land on the correct column. No state-logic change needed — today with no log naturally becomes a hollow `planned` bar (since today's day name will match a `PlanDay`), or a blank if today is a rest day.
 
-### Implementation (`src/pages/Home.tsx`)
-
-1. **Use `allLogs` as the source of truth** for both completed bars and window calculation. The existing `allLogs` fetch + realtime subscription already update correctly — confirmed by the network log showing both Apr 18 + Apr 19 done.
-2. **Rewrite `buildTimeline(plan, logs)`**:
-   - Build `logByDate` from all `done`/`in_progress` logs in `allLogs`.
-   - Compute window start: take the 30th most-recent completed-log date; fallback to `today - 30d`.
-   - Compute window end: `plan.end_date` (if any) else `today + 30d`.
-   - Walk every date in `[start..end]`. For each:
-     - If a log exists → `state: "done"`, color from `colorForLog(log)` (mirror Calendar's helper exactly).
-     - Else if date ≥ today AND matches a `PlanDay.dayName` → `state: "planned"`, color from `dayTypeTag`.
-     - Else → `state: "blank"` (muted grey, low opacity).
-   - Drop the old `"skipped"` state — past unsaved planned days now just render blank, matching the user's "blanks for inactive days" intent.
-3. **Color helper**: extract `colorForLog` to match Calendar so a strength log on Home shows the same hue as on Calendar. Currently Home uses `primaryTagColor(tags)` which only checks tags; align it with Calendar's `tags[0] ?? activity_type ?? "strength"` fallback.
-4. **Scroll anchor**: change the `useEffect` from "scroll to today" to "scroll to most-recent-done (or today if none)", right-aligned with ~20% padding so a few upcoming hollow bars peek into view.
-5. **Peek popover**: keep current click-to-peek behavior; for done bars show the abbreviated `day_key` second half (e.g. "UppA"); for planned bars show abbreviated plan day type; for blanks show "Rest" or just the date.
-6. **Realtime / refresh**: no change needed — `allLogs` is already wired to the realtime channel and visibility/focus refetch.
+4. **Done-state matching**: with corrected `ymd`, Apr 18/19 log_date strings will match the cursor's local-date strings, rendering them as solid black (strength color).
 
 ### Files touched
 
 ```
-src/pages/Home.tsx   — rewrite buildTimeline window logic, align color helper with Calendar, retarget scroll anchor
+src/pages/Home.tsx   — replace ymd() with local formatter; add created_at to query + secondary order
 ```
 
-No DB or config changes. No changes to Calendar or Logger.
+No DB or schema changes.
 
