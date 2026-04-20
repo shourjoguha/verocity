@@ -75,6 +75,7 @@ export default function Logger() {
   const [pickerOpen, setPickerOpen] = useState<{ kind: "swap" | "add"; sectionId: string; groupId?: string; itemIndex?: number } | null>(null);
   const [restTimer, setRestTimer] = useState<{ targetSeconds: number; label: string } | null>(null);
   const [savedTick, setSavedTick] = useState(0);
+  const [warmupNote, setWarmupNote] = useState<string>("");
 
   const sw = useStopwatch();
 
