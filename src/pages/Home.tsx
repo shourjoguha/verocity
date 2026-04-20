@@ -6,7 +6,7 @@ import { EchoHeadline } from "@/components/EchoHeadline";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
-import { cn } from "@/lib/utils";
+import { cn, sessionTypeFromDayKey } from "@/lib/utils";
 import { appConfig } from "@/config/app.config";
 import type { ParsedPlan, PlanDay } from "@/lib/types";
 
@@ -170,7 +170,7 @@ export default function Home() {
                     <span className="w-[3px] shrink-0" style={{ backgroundColor: color }} aria-hidden />
                     <div className="flex-1 min-w-0 flex items-center justify-between gap-3 py-3 pr-1">
                       <div className="flex-1 min-w-0">
-                        <div className="font-display text-base tracking-[-0.03em] truncate">{l.day_key ?? "Session"}</div>
+                        <div className="font-display text-base tracking-[-0.03em] truncate">{sessionTypeFromDayKey(l.day_key)}</div>
                         <div className="text-xs text-muted-foreground mt-0.5">{daysAgo(l.log_date)}</div>
                       </div>
                       <span className="text-xs font-mono text-muted-foreground shrink-0">{l.total_seconds ? fmtLong(l.total_seconds) : "—"}</span>

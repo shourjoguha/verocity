@@ -126,6 +126,7 @@
     position: relative;
     display: inline-block;
     line-height: 0.9;
+    padding-left: 0.16em;
   }
   .echo-headline > .echo-layer {
     position: absolute;
