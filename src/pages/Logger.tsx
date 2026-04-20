@@ -641,58 +641,73 @@ export default function Logger() {
           onSaveAsDone={saveAsDone}
         />
 
-        <Accordion type="multiple" defaultValue={doc.sections.map((s) => s.id)} className="mt-6">
-          {doc.sections.map((section) => (
-            <AccordionItem key={section.id} value={section.id} className="border-b hairline">
-              <AccordionTrigger className="py-3 hover:no-underline">
-                <div className="flex items-baseline gap-3 w-full">
-                  <SectionTitle
-                    name={section.name}
-                    editable={allowSectionEdit}
-                    onRename={(n) => renameSection(section.id, n)}
-                    onRemove={() => removeSection(section.id)}
-                  />
-                  <span className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">
-                    {section.groups.reduce((n, g) => n + g.items.length, 0)} mvts · {section.groups.reduce((n, g) => n + g.items.reduce((m, it) => m + it.sets.length, 0), 0)} sets
-                  </span>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pb-4">
-                <div className="space-y-3">
-                  {section.groups.map((group) => (
-                    <GroupBlock
-                      key={group.id}
-                      section={section}
-                      allSections={doc.sections}
-                      group={group}
-                      selected={selected}
-                      onSelectToggle={toggleSelect}
-                      onSetActual={setActual}
-                      onToggleComplete={toggleSetComplete}
-                      onToggleItemComplete={toggleItemComplete}
-                      onAddSet={addSet}
-                      onRemoveSet={removeSet}
-                      onItemRest={setItemRest}
-                      onGroupRest={setGroupRest}
-                      onChangeKind={changeGroupKind}
-                      onRemoveItem={removeItem}
-                      onMoveItem={moveItem}
-                      onSwap={(g, i) => setPickerOpen({ kind: "swap", sectionId: section.id, groupId: g, itemIndex: i })}
-                      onSwapMetric={swapMetric}
-                      onToggleNotation={toggleNotation}
-                      onStartRest={(seconds, label) => setRestTimer({ targetSeconds: seconds, label })}
+        <Accordion type="multiple" defaultValue={doc.sections.filter((s) => s.name !== "Warm-up").map((s) => s.id)} className="mt-6">
+          {doc.sections.map((section) => {
+            const isWarmup = section.name === "Warm-up";
+            if (isWarmup) {
+              return (
+                <CompactWarmupSection
+                  key={section.id}
+                  section={section}
+                  freeText={warmupNote}
+                  onToggleItemComplete={toggleItemComplete}
+                  onRemoveItem={removeItem}
+                  onAddMovement={() => setPickerOpen({ kind: "add", sectionId: section.id })}
+                />
+              );
+            }
+            return (
+              <AccordionItem key={section.id} value={section.id} className="border-b hairline">
+                <AccordionTrigger className="py-3 hover:no-underline">
+                  <div className="flex items-baseline gap-3 w-full">
+                    <SectionTitle
+                      name={section.name}
+                      editable={allowSectionEdit}
+                      onRename={(n) => renameSection(section.id, n)}
+                      onRemove={() => removeSection(section.id)}
                     />
-                  ))}
-                  <button
-                    onClick={() => setPickerOpen({ kind: "add", sectionId: section.id })}
-                    className="w-full border border-dashed hairline py-3 text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground hover:bg-secondary transition-colors duration-slow ease-swiss"
-                  >
-                    <Plus className="inline h-3 w-3 mr-1" /> Add movement
-                  </button>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          ))}
+                    <span className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">
+                      {section.groups.reduce((n, g) => n + g.items.length, 0)} mvts · {section.groups.reduce((n, g) => n + g.items.reduce((m, it) => m + it.sets.length, 0), 0)} sets
+                    </span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-4">
+                  <div className="space-y-3">
+                    {section.groups.map((group) => (
+                      <GroupBlock
+                        key={group.id}
+                        section={section}
+                        allSections={doc.sections}
+                        group={group}
+                        selected={selected}
+                        onSelectToggle={toggleSelect}
+                        onSetActual={setActual}
+                        onToggleComplete={toggleSetComplete}
+                        onToggleItemComplete={toggleItemComplete}
+                        onAddSet={addSet}
+                        onRemoveSet={removeSet}
+                        onItemRest={setItemRest}
+                        onGroupRest={setGroupRest}
+                        onChangeKind={changeGroupKind}
+                        onRemoveItem={removeItem}
+                        onMoveItem={moveItem}
+                        onSwap={(g, i) => setPickerOpen({ kind: "swap", sectionId: section.id, groupId: g, itemIndex: i })}
+                        onSwapMetric={swapMetric}
+                        onToggleNotation={toggleNotation}
+                        onStartRest={(seconds, label) => setRestTimer({ targetSeconds: seconds, label })}
+                      />
+                    ))}
+                    <button
+                      onClick={() => setPickerOpen({ kind: "add", sectionId: section.id })}
+                      className="w-full border border-dashed hairline py-3 text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground hover:bg-secondary transition-colors duration-slow ease-swiss"
+                    >
+                      <Plus className="inline h-3 w-3 mr-1" /> Add movement
+                    </button>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
         </Accordion>
 
         {allowSectionEdit && (
