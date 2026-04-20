@@ -1,35 +1,33 @@
 
 
-## Add diagonal cross-hatch texture to blank bars
+## Plan
 
-Bars are only 6px wide × 24px tall, so a real cross-hatch pattern would be invisible. Instead, render a single diagonal stripe pattern using `repeating-linear-gradient` as the bar's background, sized small enough to read at 6px width. Slightly bump opacity from `0.4` → `0.55` so the texture is discernible without competing with done/planned bars.
+### Issue 1 — EchoHeadline indentation
+Add `padding-left: 0.16em` to `.echo-headline` in `src/index.css` to compensate for the leftmost echo layer offset. Headlines on Plan, Home, Library, Logger, etc. will visually align with their `px-4` container content.
 
-### Change in `src/pages/Home.tsx` (lines 359–363)
+### Issue 2 — Strip day-of-week from session names
+Mirror the **exact same logic** already used by the "Pick a day" rail. That section displays `PlanDay.type` (e.g., "Lower A (Squat-Dominant)") — the part **after** the `—` in `day_key`. The codebase already does this split inline in `Home.tsx:107` and `Plan.tsx:72` (`day_key.split("—")[0]` for the day-name half, `[1]` for the type half — see Home.tsx:286 which already uses `[1]` for the timeline label).
 
-Replace the blank state styling:
-
+**Add helper** in `src/lib/utils.ts` consistent with that pattern:
 ```ts
-} else {
-  // blank (rest / off-plan / past unplanned) — diagonal hatch texture
-  style.backgroundImage = `repeating-linear-gradient(
-    45deg,
-    hsl(var(--muted-foreground) / 0.35) 0,
-    hsl(var(--muted-foreground) / 0.35) 1px,
-    transparent 1px,
-    transparent 3px
-  )`;
-  style.backgroundColor = "hsl(var(--muted) / 0.25)";
-  style.opacity = 0.55;
+export function sessionTypeFromDayKey(dayKey: string | null): string {
+  if (!dayKey) return "Session";
+  const parts = dayKey.split("—");
+  return (parts[1] ?? parts[0]).trim() || "Session";
 }
 ```
 
-This produces fine 45° diagonal lines (1px stroke, 3px gap) over a faint muted fill, mimicking the reference image at the bar's tiny scale. Opacity raised from 0.4 → 0.55 (very slight bump, as requested).
+**Apply to display sites** (replace `l.day_key ?? "Session"`):
+- `src/pages/Home.tsx:173` — Recent list item title
+- `src/pages/Calendar.tsx:106, 107, 126` — bar `aria-label`/`title` + this-month list title
+
+`Logger.tsx` is **not** changed — it edits/uses the full `day_key` value internally. Storage format unchanged so `lastByDay` indexing (which splits on `—`[0]) keeps working.
 
 ### Files touched
-
 ```
-src/pages/Home.tsx   — blank-state bars get diagonal-hatch backgroundImage + 0.55 opacity
+src/index.css           — .echo-headline padding-left: 0.16em
+src/lib/utils.ts        — add sessionTypeFromDayKey() helper
+src/pages/Home.tsx      — Recent list uses helper
+src/pages/Calendar.tsx  — bar labels + month list use helper
 ```
-
-No other states affected. No DB or config changes.
 
