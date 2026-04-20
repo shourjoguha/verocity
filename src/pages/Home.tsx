@@ -37,9 +37,10 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function primaryTagColor(tags: string[] | null): string {
-  const tag = (tags ?? []).find((t) => appConfig.activity.tagColors[t]);
-  return tag ? appConfig.activity.tagColors[tag] : appConfig.activity.fallbackColor;
+function colorForLog(l: LogRow): string {
+  const tags = l.tags ?? [];
+  const dominant = tags[0] ?? l.activity_type ?? "strength";
+  return appConfig.activity.tagColors[dominant] ?? appConfig.activity.fallbackColor;
 }
 
 export default function Home() {
