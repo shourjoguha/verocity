@@ -12,6 +12,7 @@ import { fmtLong } from "@/hooks/useTimer";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { appConfig } from "@/config/app.config";
 import { AddSessionMenu } from "@/components/AddSessionMenu";
+import { sessionTypeFromDayKey } from "@/lib/utils";
 
 type LogRow = { id: string; log_date: string; day_key: string | null; status: string; total_seconds: number | null; tags: string[] | null; activity_type: string | null };
 
@@ -103,8 +104,8 @@ export default function Calendar() {
                         onClick={(e) => { e.stopPropagation(); nav(`/log/${l.id}`); }}
                         className="h-1.5 w-full hover:opacity-80 transition-opacity"
                         style={{ background: colorForLog(l) }}
-                        aria-label={l.day_key ?? "Session"}
-                        title={l.day_key ?? "Session"}
+                        aria-label={sessionTypeFromDayKey(l.day_key)}
+                        title={sessionTypeFromDayKey(l.day_key)}
                       />
                     ))}
                   </div>
@@ -123,7 +124,7 @@ export default function Calendar() {
                   <div className="flex items-baseline gap-3">
                     <span className="inline-block h-3 w-1 self-center" style={{ background: colorForLog(l) }} />
                     <span className="font-mono text-xs text-muted-foreground">{l.log_date}</span>
-                    <span className="font-display text-base tracking-[-0.03em]">{l.day_key ?? "Session"}</span>
+                    <span className="font-display text-base tracking-[-0.03em]">{sessionTypeFromDayKey(l.day_key)}</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="chip">{l.status}</span>
