@@ -143,6 +143,7 @@ export default function Logger() {
           const inferred = appConfig.activity.dayTypeTag(planDay.type);
           setActivityType(inferred);
           setTags([inferred]);
+          if (planDay.warmup) setWarmupNote(planDay.warmup);
         }
       }
     })();
