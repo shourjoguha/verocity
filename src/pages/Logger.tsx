@@ -1347,3 +1347,76 @@ function RestOverlay(props: { targetSeconds: number; label: string; onClose: () 
     </div>
   );
 }
+
+/** Compressed Warm-up section: collapsed by default, single-line items, no per-set timers/grids. */
+function CompactWarmupSection(props: {
+  section: LogSection;
+  freeText?: string;
+  onToggleItemComplete: (sectionId: string, groupId: string, itemIdx: number) => void;
+  onRemoveItem: (sectionId: string, groupId: string, itemIdx: number) => void;
+  onAddMovement: () => void;
+}) {
+  const { section, freeText } = props;
+  const totalMvts = section.groups.reduce((n, g) => n + g.items.length, 0);
+  const totalSets = section.groups.reduce((n, g) => n + g.items.reduce((m, it) => m + it.sets.length, 0), 0);
+
+  function summarizeSets(it: LogItem): string {
+    const sets = it.sets;
+    if (sets.length === 0) return "—";
+    const planned = sets[0]?.planned;
+    if (planned?.raw) return `${sets.length}× ${planned.raw}`;
+    const reps = sets.map((s) => s.actual.reps ?? s.planned?.reps).filter((v) => v != null);
+    if (reps.length === sets.length) return `${sets.length}× ${reps[0]}`;
+    return `${sets.length} sets`;
+  }
+
+  return (
+    <AccordionItem value={section.id} className="border-b hairline border-dashed bg-muted/30">
+      <AccordionTrigger className="py-1.5 px-2 hover:no-underline">
+        <div className="flex items-baseline gap-3 w-full">
+          <span className="font-display text-xs uppercase tracking-[0.14em] text-muted-foreground">Warm-up</span>
+          <span className="text-[0.55rem] uppercase tracking-[0.14em] text-muted-foreground">
+            {totalMvts} mvts · {totalSets} sets
+          </span>
+        </div>
+      </AccordionTrigger>
+      <AccordionContent className="pb-3 px-2">
+        {freeText && (
+          <div className="text-[0.7rem] italic text-muted-foreground mb-2">{freeText}</div>
+        )}
+        <ul className="space-y-1">
+          {section.groups.map((group) =>
+            group.items.map((it, i) => {
+              const allDone = it.sets.length > 0 && it.sets.every((s) => s.actual.completed);
+              return (
+                <li key={`${group.id}-${i}`} className="flex items-center justify-between gap-2 text-xs py-1 border-b hairline last:border-b-0">
+                  <button
+                    onClick={() => props.onToggleItemComplete(section.id, group.id, i)}
+                    className={cn("flex-1 text-left flex items-center gap-2", allDone && "text-muted-foreground line-through")}
+                  >
+                    <span className={cn("inline-block h-3 w-3 border hairline shrink-0", allDone && "bg-foreground")} />
+                    <span className="font-display tracking-[-0.02em] truncate">{it.name}</span>
+                  </button>
+                  <span className="font-mono text-[0.65rem] text-muted-foreground shrink-0">{summarizeSets(it)}</span>
+                  <button
+                    onClick={() => props.onRemoveItem(section.id, group.id, i)}
+                    className="p-1 text-muted-foreground hover:text-destructive shrink-0"
+                    aria-label="Remove movement"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </li>
+              );
+            })
+          )}
+        </ul>
+        <button
+          onClick={props.onAddMovement}
+          className="mt-2 w-full border border-dashed hairline py-1.5 text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground hover:bg-secondary transition-colors"
+        >
+          <Plus className="inline h-3 w-3 mr-1" /> Add warm-up movement
+        </button>
+      </AccordionContent>
+    </AccordionItem>
+  );
+}
