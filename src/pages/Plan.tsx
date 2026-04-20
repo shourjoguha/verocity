@@ -276,11 +276,15 @@ function DayAccordion(props: {
       }}
     >
       <AccordionTrigger className="py-3 hover:no-underline">
-        <div className="flex items-baseline gap-3">
-          {editMode && <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />}
-          <span className="font-display text-xl uppercase tracking-[-0.04em]">{day.type}</span>
-          <span className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">{day.dayName}</span>
-          {props.lastWeek && <span className="chip">Last: W{props.lastWeek}</span>}
+        <div className="flex items-start justify-between gap-3 w-full">
+          <div className="flex items-center gap-2 flex-1 min-w-0 text-left">
+            {editMode && <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab shrink-0" />}
+            <span className="font-display text-sm uppercase tracking-[-0.04em]">{day.type}</span>
+          </div>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <span className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">{day.dayName}</span>
+            {props.lastWeek && <span className="chip">Last: W{props.lastWeek}</span>}
+          </div>
         </div>
       </AccordionTrigger>
       <AccordionContent className="pb-4">
