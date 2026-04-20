@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { appConfig } from "@/config/app.config";
 import type { ParsedPlan, PlanDay } from "@/lib/types";
 
-type LogRow = { id: string; log_date: string; day_key: string | null; status: string; total_seconds: number | null; tags: string[] | null };
+type LogRow = { id: string; log_date: string; day_key: string | null; status: string; total_seconds: number | null; tags: string[] | null; activity_type: string | null };
 type PlanRow = { id: string; name: string; parsed: ParsedPlan; start_date: string | null; end_date: string | null; is_active: boolean };
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -37,9 +37,10 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function primaryTagColor(tags: string[] | null): string {
-  const tag = (tags ?? []).find((t) => appConfig.activity.tagColors[t]);
-  return tag ? appConfig.activity.tagColors[tag] : appConfig.activity.fallbackColor;
+function colorForLog(l: LogRow): string {
+  const tags = l.tags ?? [];
+  const dominant = tags[0] ?? l.activity_type ?? "strength";
+  return appConfig.activity.tagColors[dominant] ?? appConfig.activity.fallbackColor;
 }
 
 export default function Home() {
@@ -58,8 +59,8 @@ export default function Home() {
     async function fetchAll() {
       const [{ data: planData }, { data: recentData }, { data: allLogsData }] = await Promise.all([
         supabase.from("plans").select("id,name,parsed,start_date,end_date,is_active").eq("owner_user_id", user.id).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags").eq("owner_user_id", user.id).in("status", ["done", "in_progress"]).order("log_date", { ascending: false }).limit(5),
-        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags").eq("owner_user_id", user.id).neq("status", "cancelled").order("log_date", { ascending: false }),
+        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type").eq("owner_user_id", user.id).in("status", ["done", "in_progress"]).order("log_date", { ascending: false }).limit(5),
+        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type").eq("owner_user_id", user.id).neq("status", "cancelled").order("log_date", { ascending: false }),
       ]);
       if (cancelled) return;
       setPlan((planData as unknown as PlanRow) ?? null);
@@ -159,7 +160,7 @@ export default function Home() {
           <ul className="mt-3 border-y hairline divide-y hairline">
             {logs.length === 0 && <li className="py-4 text-xs text-muted-foreground uppercase tracking-[0.12em]">No sessions yet</li>}
             {logs.map((l) => {
-              const color = primaryTagColor(l.tags);
+              const color = colorForLog(l);
               return (
                 <li key={l.id}>
                   <button
@@ -218,7 +219,7 @@ export default function Home() {
 
 type TimelinePoint = {
   date: string;
-  state: "done" | "planned" | "rest" | "skipped";
+  state: "done" | "planned" | "blank";
   color: string;
   isToday: boolean;
   label: string;
@@ -233,23 +234,34 @@ function abbrev(s: string): string {
 }
 
 function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
-  const start = plan.start_date ? new Date(plan.start_date + "T00:00:00") : new Date();
-  const end = plan.end_date
-    ? new Date(plan.end_date + "T00:00:00")
-    : new Date(start.getTime() + 16 * 7 * 86_400_000);
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayStr = ymd(today);
-  const horizon = new Date(today.getTime() + 10 * 86_400_000);
 
-  // Index logs by date (latest done log per date wins)
+  // Index completed/in-progress logs by date (most recent wins for that date).
   const logByDate = new Map<string, LogRow>();
+  const doneDates: string[] = [];
   for (const l of logs) {
     if (l.status === "done" || l.status === "in_progress") {
-      if (!logByDate.has(l.log_date)) logByDate.set(l.log_date, l);
+      if (!logByDate.has(l.log_date)) {
+        logByDate.set(l.log_date, l);
+        doneDates.push(l.log_date);
+      }
     }
   }
+  // logs are ordered desc by log_date already
+  // Window start: 30th most-recent done log date, fallback today-30d
+  let start: Date;
+  if (doneDates.length > 0) {
+    const anchor = doneDates[Math.min(doneDates.length - 1, 29)];
+    start = new Date(anchor + "T00:00:00");
+  } else {
+    start = new Date(today.getTime() - 30 * 86_400_000);
+  }
+  // Window end: plan.end_date if set, else today + 30d
+  const end = plan.end_date
+    ? new Date(plan.end_date + "T00:00:00")
+    : new Date(today.getTime() + 30 * 86_400_000);
 
   // Index plan days by day name
   const planByDayName = new Map<string, PlanDay>();
@@ -270,22 +282,16 @@ function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
 
     if (log) {
       state = "done";
-      color = primaryTagColor(log.tags);
+      color = colorForLog(log);
       const dn = (log.day_key ?? "").split("—")[1]?.trim() ?? log.day_key ?? "Done";
       label = abbrev(dn) || "Done";
-    } else if (planDay) {
+    } else if (planDay && cursor.getTime() >= today.getTime()) {
       const tag = appConfig.activity.dayTypeTag(planDay.type);
       color = appConfig.activity.tagColors[tag] ?? appConfig.activity.fallbackColor;
       label = abbrev(planDay.type) || planDay.type.slice(0, 5);
-      if (cursor.getTime() < today.getTime()) {
-        state = "skipped";
-      } else if (cursor.getTime() <= horizon.getTime()) {
-        state = "planned";
-      } else {
-        state = "planned";
-      }
+      state = "planned";
     } else {
-      state = "rest";
+      state = "blank";
       color = appConfig.activity.fallbackColor;
       label = "Rest";
     }
@@ -302,16 +308,23 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const points = useMemo(() => buildTimeline(plan, logs), [plan, logs]);
   const todayIndex = points.findIndex((p) => p.isToday);
+  // Anchor scroll to most-recent done log if any, else today
+  const anchorIndex = useMemo(() => {
+    for (let i = points.length - 1; i >= 0; i--) {
+      if (points[i].state === "done") return i;
+    }
+    return todayIndex;
+  }, [points, todayIndex]);
   const [peekIndex, setPeekIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || todayIndex < 0) return;
-    // Each bar is 6px wide + 2px gap = 8px
+    if (!el || anchorIndex < 0) return;
+    // Each bar is 6px wide + 2px gap = 8px. Right-align with ~20% padding so upcoming peeks in.
     const bw = 8;
-    const target = todayIndex * bw - el.clientWidth / 2;
+    const target = anchorIndex * bw - el.clientWidth * 0.8;
     el.scrollTo({ left: Math.max(0, target), behavior: "auto" });
-  }, [todayIndex]);
+  }, [anchorIndex]);
 
   // Outside-click dismiss for the peek popover
   useEffect(() => {
@@ -343,10 +356,8 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
               style.borderWidth = "1px";
               style.borderStyle = "solid";
               style.backgroundColor = "transparent";
-            } else if (p.state === "skipped") {
-              style.backgroundColor = "hsl(var(--muted))";
             } else {
-              // rest
+              // blank (rest / off-plan / past unplanned)
               style.backgroundColor = "hsl(var(--muted))";
               style.opacity = 0.4;
             }
