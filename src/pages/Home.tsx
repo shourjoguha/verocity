@@ -59,8 +59,8 @@ export default function Home() {
     async function fetchAll() {
       const [{ data: planData }, { data: recentData }, { data: allLogsData }] = await Promise.all([
         supabase.from("plans").select("id,name,parsed,start_date,end_date,is_active").eq("owner_user_id", user.id).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type").eq("owner_user_id", user.id).in("status", ["done", "in_progress"]).order("log_date", { ascending: false }).limit(5),
-        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type").eq("owner_user_id", user.id).neq("status", "cancelled").order("log_date", { ascending: false }),
+        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type,created_at").eq("owner_user_id", user.id).in("status", ["done", "in_progress"]).order("log_date", { ascending: false }).order("created_at", { ascending: false }).limit(5),
+        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type,created_at").eq("owner_user_id", user.id).neq("status", "cancelled").order("log_date", { ascending: false }).order("created_at", { ascending: false }),
       ]);
       if (cancelled) return;
       setPlan((planData as unknown as PlanRow) ?? null);
