@@ -302,6 +302,26 @@ function DayAccordion(props: {
   );
 }
 
+function WarmupStrip({ exercises, freeText }: { exercises: { idx: number; ex: PlanExercise }[]; freeText?: string }) {
+  if (exercises.length === 0 && !freeText) return null;
+  const marker = appConfig.blocks.sectionMarkers["Warm-up"];
+  const names = exercises.map((e) => e.ex.variant ?? e.ex.name).join(" · ");
+  return (
+    <div className="mb-2 flex items-stretch border hairline border-dashed">
+      <span className={cn("w-1 shrink-0", marker.className)} aria-label="Warm-up" />
+      <div className="flex-1 px-2 py-2 text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground leading-relaxed">
+        <span className="font-display tracking-[0.18em] mr-2">Warm-up</span>
+        {names}
+        {freeText && (
+          <span className="italic normal-case tracking-normal">
+            {names ? " · " : ""}{freeText}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DayTable(props: {
   day: PlanDay;
   dayIdx: number;
@@ -316,8 +336,21 @@ function DayTable(props: {
   const lastLog = useMemo(() => lastWeek ? dayLogs.find((l) => l.week_number === lastWeek) : null, [lastWeek, dayLogs]);
   const markers = appConfig.blocks.sectionMarkers;
 
+  // Partition exercises: warm-ups go to compressed strip, the rest into the main table.
+  const { warmupExercises, mainExercises } = useMemo(() => {
+    const wu: { idx: number; ex: PlanExercise }[] = [];
+    const main: { idx: number; ex: PlanExercise }[] = [];
+    day.exercises.forEach((ex, idx) => {
+      const sectionKey = (appConfig.sectionAliases[ex.block.toLowerCase()] ?? ex.block) as string;
+      if (sectionKey === "Warm-up") wu.push({ idx, ex });
+      else main.push({ idx, ex });
+    });
+    return { warmupExercises: wu, mainExercises: main };
+  }, [day.exercises]);
+
   return (
     <TooltipProvider delayDuration={200}>
+      <WarmupStrip exercises={warmupExercises} freeText={day.warmup} />
       <div className="relative overflow-x-auto edge-fade-x border hairline">
         <table className="ll-table text-xs">
           <thead>
@@ -336,7 +369,7 @@ function DayTable(props: {
             </tr>
           </thead>
           <tbody>
-            {day.exercises.map((ex, idx) => {
+            {mainExercises.map(({ idx, ex }) => {
               const sectionKey = (appConfig.sectionAliases[ex.block.toLowerCase()] ?? ex.block) as string;
               const marker = markers[sectionKey] ?? markers["Main"];
               return (
