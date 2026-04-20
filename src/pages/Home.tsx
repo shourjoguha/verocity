@@ -160,7 +160,7 @@ export default function Home() {
           <ul className="mt-3 border-y hairline divide-y hairline">
             {logs.length === 0 && <li className="py-4 text-xs text-muted-foreground uppercase tracking-[0.12em]">No sessions yet</li>}
             {logs.map((l) => {
-              const color = primaryTagColor(l.tags);
+              const color = colorForLog(l);
               return (
                 <li key={l.id}>
                   <button
