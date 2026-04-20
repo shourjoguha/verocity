@@ -98,6 +98,16 @@ export default function Logger() {
           setActivityType(data.activity_type ?? appConfig.activity.defaultType);
           setTags(data.tags ?? ["strength"]);
           sw.setSeconds(data.total_seconds ?? 0);
+          // Try to find warmup free-text from the linked plan day.
+          if (data.plan_id && data.day_key) {
+            const { data: planRow } = await supabase.from("plans").select("parsed").eq("id", data.plan_id).maybeSingle();
+            if (planRow) {
+              const plan = planRow.parsed as unknown as ParsedPlan;
+              const dayName = (data.day_key ?? "").split("—")[0].trim();
+              const planDay = plan.days.find((d) => d.dayName === dayName);
+              if (planDay?.warmup) setWarmupNote(planDay.warmup);
+            }
+          }
         }
       } else {
         // Seed log date from ?date= if present.
