@@ -357,9 +357,10 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
               style.borderStyle = "solid";
               style.backgroundColor = "transparent";
             } else {
-              // blank (rest / off-plan / past unplanned)
-              style.backgroundColor = "hsl(var(--muted))";
-              style.opacity = 0.4;
+              // blank (rest / off-plan / past unplanned) — diagonal hatch texture
+              style.backgroundImage = `repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.35) 0, hsl(var(--muted-foreground) / 0.35) 1px, transparent 1px, transparent 3px)`;
+              style.backgroundColor = "hsl(var(--muted) / 0.25)";
+              style.opacity = 0.55;
             }
             if (p.isToday) {
               cls = cn(cls, "outline outline-1 outline-foreground outline-offset-1");
