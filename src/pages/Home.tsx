@@ -352,7 +352,7 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
             if (p.state === "done") {
               style.backgroundColor = p.color;
             } else if (p.state === "planned") {
-              style.borderColor = p.color;
+              style.borderColor = `color-mix(in srgb, ${p.color} 50%, transparent)`;
               style.borderWidth = "1px";
               style.borderStyle = "solid";
               style.backgroundColor = "transparent";
