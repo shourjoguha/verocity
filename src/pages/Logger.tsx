@@ -1288,7 +1288,7 @@ function SetRow(props: {
           aria-label="Toggle complete"
         />
         <div
-          aria-hidden={!revealed}
+          aria-hidden={phase !== "revealed"}
           className="absolute top-0 left-full h-full flex items-center justify-center"
           style={{ width: REVEAL, backgroundColor: "hsl(0 50% 27%)" }}
         >
