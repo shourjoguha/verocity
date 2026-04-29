@@ -1589,3 +1589,63 @@ function CompactWarmupSection(props: {
     </AccordionItem>
   );
 }
+
+/** Modal: pick another movement (in the same section) to superset with, or add a new one. */
+function SupersetPicker(props: {
+  doc: LogDocument;
+  target: { sectionId: string; groupId: string; itemIndex: number };
+  onClose: () => void;
+  onPickExisting: (src: { sectionId: string; groupId: string; itemIndex: number }) => void;
+  onPickNew: () => void;
+}) {
+  const { doc, target } = props;
+  const section = doc.sections.find((s) => s.id === target.sectionId);
+  const targetGroup = section?.groups.find((g) => g.id === target.groupId);
+  const candidates: { srcSectionId: string; groupId: string; itemIndex: number; name: string }[] = [];
+  if (section) {
+    for (const g of section.groups) {
+      g.items.forEach((it, i) => {
+        if (g.id === target.groupId && i === target.itemIndex) return;
+        if (targetGroup && g.id === target.groupId) return; // already in same group
+        candidates.push({ srcSectionId: section.id, groupId: g.id, itemIndex: i, name: it.name });
+      });
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-50 bg-background/90 flex items-center justify-center p-4" onClick={props.onClose}>
+      <div className="bg-background border-2 border-foreground w-full max-w-sm max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-3 py-2 border-b hairline flex items-center justify-between">
+          <span className="font-display text-sm uppercase tracking-[-0.03em]">Superset with…</span>
+          <button onClick={props.onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {candidates.length === 0 ? (
+            <div className="px-3 py-4 text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">
+              No other movements in this section yet.
+            </div>
+          ) : (
+            <ul className="divide-y hairline">
+              {candidates.map((c) => (
+                <li key={`${c.groupId}-${c.itemIndex}`}>
+                  <button
+                    onClick={() => props.onPickExisting({ sectionId: c.srcSectionId, groupId: c.groupId, itemIndex: c.itemIndex })}
+                    className="w-full text-left px-3 py-2.5 hover:bg-secondary transition-colors"
+                  >
+                    <div className="font-display text-sm tracking-[-0.03em] truncate">{c.name}</div>
+                    <div className="text-[0.55rem] uppercase tracking-[0.14em] text-muted-foreground mt-0.5">{section?.name}</div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <button
+          onClick={props.onPickNew}
+          className="border-t-2 border-foreground py-3 text-xs uppercase tracking-[0.14em] hover:bg-secondary transition-colors flex items-center justify-center gap-2"
+        >
+          <Plus className="h-3 w-3" /> New movement
+        </button>
+      </div>
+    </div>
+  );
+}
