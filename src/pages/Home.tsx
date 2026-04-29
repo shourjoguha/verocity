@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
+import { DayPreviewDialog } from "@/components/DayPreviewDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
@@ -51,6 +52,7 @@ export default function Home() {
   const [allLogs, setAllLogs] = useState<LogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeDay, setActiveDay] = useState<string | null>(null);
+  const [previewDay, setPreviewDay] = useState<PlanDay | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -148,6 +150,7 @@ export default function Home() {
               todayDayName={todayDayName}
               lastByDay={lastByDay}
               onStart={(d) => nav(`/log/new?day=${encodeURIComponent(d.dayName)}&week=${week}`)}
+              onPreview={(d) => setPreviewDay(d)}
             />
           </section>
         )}
@@ -213,6 +216,18 @@ export default function Home() {
           </button>
         </section>
       </main>
+      <DayPreviewDialog
+        day={previewDay}
+        week={week}
+        open={previewDay !== null}
+        onOpenChange={(o) => { if (!o) setPreviewDay(null); }}
+        onStart={() => {
+          if (previewDay) {
+            nav(`/log/new?day=${encodeURIComponent(previewDay.dayName)}&week=${week}`);
+            setPreviewDay(null);
+          }
+        }}
+      />
     </>
   );
 }
