@@ -145,6 +145,10 @@ export default function Logger() {
           setTags([inferred]);
           if (planDay.warmup) setWarmupNote(planDay.warmup);
         }
+        // Auto-start the timer for any newly-opened session (plan-driven or custom).
+        setStartedAt(new Date().toISOString());
+        setStatus("in_progress");
+        sw.start();
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
