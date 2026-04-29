@@ -927,6 +927,8 @@ function ItemRow(props: {
   onSwap: () => void;
   onSwapMetric: (oldMetric: SwappableMetric, newMetric: SwappableMetric) => void;
   onToggleNotation: (setIdx: number, tag: string) => void;
+  onToggleItemNotation: (tag: string) => void;
+  onSuperset: () => void;
   onStartRest: (seconds: number, label: string) => void;
 }) {
   const { item, section, allSections, selected, onSelectToggle, onStartRest } = props;
