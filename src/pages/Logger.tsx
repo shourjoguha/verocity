@@ -962,11 +962,10 @@ function ItemRow(props: {
       </div>
 
       <div className="overflow-x-auto edge-fade-x">
-        <table className="ll-table min-w-[420px]">
+        <table className="ll-table min-w-[360px]">
           <thead>
             <tr>
               <th className="w-8">#</th>
-              <th>Planned</th>
               {cols.map((m) => (
                 <th key={m} className="text-right">
                   {(SWAPPABLE as readonly string[]).includes(m) ? (
