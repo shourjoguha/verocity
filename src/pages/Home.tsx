@@ -10,7 +10,7 @@ import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
 import { cn, sessionTypeFromDayKey } from "@/lib/utils";
 import { appConfig } from "@/config/app.config";
-import type { ParsedPlan, PlanDay } from "@/lib/types";
+import type { ParsedPlan, PlanDay, LogDocument } from "@/lib/types";
 
 type LogRow = { id: string; log_date: string; day_key: string | null; status: string; total_seconds: number | null; tags: string[] | null; activity_type: string | null };
 type StatsLogRow = LogRow & { data?: LogDocument };
