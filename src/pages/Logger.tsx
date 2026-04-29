@@ -164,6 +164,8 @@ export default function Logger() {
 
   async function saveLog(showToast = true) {
     if (!user || !doc) return;
+    sw.pause();
+    if (status === "in_progress") setStatus("paused");
     dirtyRef.current = false;
     const payload = {
       owner_user_id: user.id,
