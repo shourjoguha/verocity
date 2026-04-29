@@ -864,6 +864,8 @@ function GroupBlock(props: {
   onSwap: (groupId: string, itemIdx: number) => void;
   onSwapMetric: (sectionId: string, groupId: string, itemIdx: number, oldMetric: SwappableMetric, newMetric: SwappableMetric) => void;
   onToggleNotation: (sectionId: string, groupId: string, itemIdx: number, setIdx: number, tag: string) => void;
+  onToggleItemNotation: (sectionId: string, groupId: string, itemIdx: number, tag: string) => void;
+  onSuperset: (sectionId: string, groupId: string, itemIdx: number) => void;
   onStartRest: (seconds: number, label: string) => void;
 }) {
   const { section, group, allSections } = props;
@@ -897,6 +899,8 @@ function GroupBlock(props: {
           onSwap={() => props.onSwap(group.id, idx)}
           onSwapMetric={(oldM, newM) => props.onSwapMetric(section.id, group.id, idx, oldM, newM)}
           onToggleNotation={(setIdx, tag) => props.onToggleNotation(section.id, group.id, idx, setIdx, tag)}
+          onToggleItemNotation={(tag) => props.onToggleItemNotation(section.id, group.id, idx, tag)}
+          onSuperset={() => props.onSuperset(section.id, group.id, idx)}
           onStartRest={props.onStartRest}
         />
       ))}
