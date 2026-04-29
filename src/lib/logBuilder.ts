@@ -59,19 +59,20 @@ export function buildLogDocument(plan: ParsedPlan, day: PlanDay, weekNumber: num
     }
     const planned = ex.weeks[weekNumber] ?? null;
     const { metrics, primary } = normalizeMetrics(ex.metrics, ex.primaryMetric, planned);
+    const sectionRest = appConfig.timer.defaults.bySection[sectionKey] ?? appConfig.timer.defaults.betweenSetsSeconds;
     const item: LogItem = {
       name: ex.variant ?? ex.name,
       metrics,
       primaryMetric: primary,
       notations: planned?.notations ?? [],
-      sets: plannedToLogSets(planned, appConfig.timer.defaults.betweenSetsSeconds),
-      restBetweenSetsSeconds: appConfig.timer.defaults.betweenSetsSeconds,
+      sets: plannedToLogSets(planned, sectionRest),
+      restBetweenSetsSeconds: sectionRest,
     };
     const group: LogGroup = {
       id: newId(),
       kind: "single",
       items: [item],
-      restAfterRoundSeconds: appConfig.timer.defaults.betweenSetsSeconds,
+      restAfterRoundSeconds: sectionRest,
     };
     sectionsMap.get(sectionKey)!.groups.push(group);
   }

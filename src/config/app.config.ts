@@ -90,6 +90,12 @@ export const appConfig = {
       betweenSetsSeconds: 90,
       withinSupersetSeconds: 15,
       afterSupersetSeconds: 120,
+      bySection: {
+        "Warm-up": 30,
+        "Main": 120,
+        "Secondary": 90,
+        "Finisher": 60,
+      } as Record<string, number>,
     },
     presets: [30, 45, 60, 75, 90, 120, 150, 180, 240, 300],
   },
