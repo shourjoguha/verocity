@@ -304,24 +304,28 @@ function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
     let state: TimelinePoint["state"];
     let color: string;
     let label: string;
+    let fullLabel: string;
 
     if (log) {
       state = "done";
       color = colorForLog(log);
       const dn = (log.day_key ?? "").split("—")[1]?.trim() ?? log.day_key ?? "Done";
       label = abbrev(dn) || "Done";
+      fullLabel = dn || "Done";
     } else if (planDay && cursor.getTime() >= today.getTime()) {
       const tag = appConfig.activity.dayTypeTag(planDay.type);
       color = appConfig.activity.tagColors[tag] ?? appConfig.activity.fallbackColor;
       label = abbrev(planDay.type) || planDay.type.slice(0, 5);
+      fullLabel = planDay.type;
       state = "planned";
     } else {
       state = "blank";
       color = appConfig.activity.fallbackColor;
       label = "Rest";
+      fullLabel = "Rest";
     }
 
-    points.push({ date: dateStr, state, color, isToday, label });
+    points.push({ date: dateStr, state, color, isToday, label, fullLabel });
     cursor.setDate(cursor.getDate() + 1);
   }
 
