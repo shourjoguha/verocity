@@ -400,13 +400,16 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
                 key={p.date + i}
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setPeekIndex((cur) => (cur === i ? null : i)); }}
+                onMouseEnter={() => setPeekIndex(i)}
+                onMouseLeave={() => setPeekIndex((cur) => (cur === i ? null : cur))}
                 className={cls}
                 style={style}
-                aria-label={`${p.date} ${p.label}`}
+                aria-label={`${p.date} ${p.fullLabel}`}
+                title={`${p.fullLabel} · ${p.date}`}
               >
                 {isPeek && (
                   <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 z-20 px-2 py-1 bg-foreground text-background text-[0.6rem] uppercase tracking-[0.12em] font-mono whitespace-nowrap pointer-events-none flex flex-col items-center gap-0.5">
-                    <span>{p.label}</span>
+                    <span>{p.fullLabel}</span>
                     <span className="text-background/60 normal-case tracking-normal text-[0.55rem]">{p.date}</span>
                   </span>
                 )}
