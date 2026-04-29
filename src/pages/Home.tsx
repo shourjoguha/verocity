@@ -478,3 +478,68 @@ function DayRail(props: {
     </div>
   );
 }
+
+/** Brzycki 1RM — more aggressive than Epley. */
+function brzycki(weight: number, reps: number): number {
+  if (reps <= 0) return weight;
+  return reps >= 37 ? weight * (1 + reps / 30) : (weight * 36) / (37 - reps);
+}
+
+function HomeStats({ logs, sessions, totalSeconds }: { logs: StatsLogRow[]; sessions: number; totalSeconds: number }) {
+  const nav = useNavigate();
+  const oneRm = useMemo(() => {
+    const best = new Map<string, { e1rm: number; weight: number; reps: number; date: string }>();
+    for (const l of logs) {
+      if (l.status !== "done") continue;
+      const doc = l.data;
+      if (!doc?.sections) continue;
+      for (const sec of doc.sections) for (const g of sec.groups) for (const it of g.items) {
+        for (const set of it.sets) {
+          const w = set.actual.weight, r = set.actual.reps;
+          if (typeof w !== "number" || typeof r !== "number" || w <= 0 || r <= 0) continue;
+          const e = brzycki(w, r);
+          const cur = best.get(it.name);
+          if (!cur || e > cur.e1rm) best.set(it.name, { e1rm: e, weight: w, reps: r, date: l.log_date });
+        }
+      }
+    }
+    return Array.from(best.entries()).sort((a, b) => b[1].e1rm - a[1].e1rm).slice(0, 5);
+  }, [logs]);
+
+  return (
+    <section className="mt-10">
+      <div className="flex items-baseline justify-between">
+        <h3 className="font-display text-xl uppercase tracking-[-0.04em]">Stats</h3>
+        <button onClick={() => nav("/stats")} className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss">All</button>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="border hairline p-3">
+          <div className="text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">Sessions</div>
+          <div className="font-display text-2xl tracking-[-0.04em] mt-1">{sessions}</div>
+        </div>
+        <div className="border hairline p-3">
+          <div className="text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">Total time</div>
+          <div className="font-display text-2xl tracking-[-0.04em] mt-1">{fmtLong(totalSeconds)}</div>
+        </div>
+      </div>
+      <div className="mt-3 border hairline">
+        <div className="px-3 py-2 text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground border-b hairline">All-time 1RM (Brzycki)</div>
+        {oneRm.length === 0 ? (
+          <div className="px-3 py-3 text-xs text-muted-foreground uppercase tracking-[0.12em]">Log some sets to see estimates</div>
+        ) : (
+          <ul className="divide-y hairline">
+            {oneRm.map(([name, v]) => (
+              <li key={name} className="flex items-baseline justify-between gap-3 px-3 py-2">
+                <span className="font-display text-sm tracking-[-0.03em] truncate">{name}</span>
+                <span className="text-xs font-mono text-muted-foreground shrink-0">
+                  <span className="text-foreground">{Math.round(v.e1rm)}kg</span>
+                  <span className="ml-2 text-[0.6rem] uppercase tracking-[0.12em]">from {v.weight}×{v.reps}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
