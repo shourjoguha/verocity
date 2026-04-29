@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
 import { DayPreviewDialog } from "@/components/DayPreviewDialog";
+import { AddSessionMenu } from "@/components/AddSessionMenu";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
@@ -53,6 +54,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [activeDay, setActiveDay] = useState<string | null>(null);
   const [previewDay, setPreviewDay] = useState<PlanDay | null>(null);
+  const [logMenuOpen, setLogMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -101,6 +103,7 @@ export default function Home() {
 
   const today = new Date();
   const todayDayName = DAY_NAMES[today.getDay()];
+  const todayStr = ymd(today);
   const week = isoWeekIndexFromStart(plan?.start_date ?? plan?.parsed?.startDate ?? null);
 
   const lastByDay = useMemo(() => {
@@ -111,6 +114,17 @@ export default function Home() {
     }
     return map;
   }, [logs]);
+
+  // ---- Inline stats (computed from allLogs) ----
+  const homeStats = useMemo(() => {
+    let totalSeconds = 0;
+    const oneRm = new Map<string, { weight: number; reps: number; e1rm: number; date: string }>();
+    for (const l of allLogs) {
+      if (l.status !== "done") continue;
+      totalSeconds += l.total_seconds ?? 0;
+    }
+    return { sessions: allLogs.filter((l) => l.status === "done").length, totalSeconds, oneRm };
+  }, [allLogs]);
 
   return (
     <>
@@ -185,34 +199,28 @@ export default function Home() {
           </ul>
         </section>
 
-        <section className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <button onClick={() => nav("/log/new?mode=custom")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
+        <HomeStats logs={allLogs} sessions={homeStats.sessions} totalSeconds={homeStats.totalSeconds} />
+
+        <section className="mt-10 grid grid-cols-3 sm:grid-cols-5 gap-2">
+          <button onClick={() => setLogMenuOpen(true)} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">New</div>
-            <div className="font-display text-lg mt-1">Blank workout</div>
+            <div className="font-display text-base mt-1">Log</div>
           </button>
-          <button onClick={() => nav("/log/activity")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
-            <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">New</div>
-            <div className="font-display text-lg mt-1">Activity</div>
-          </button>
-          <button onClick={() => nav("/plan")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
+          <button onClick={() => nav("/plan")} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">View</div>
-            <div className="font-display text-lg mt-1">Plan</div>
+            <div className="font-display text-base mt-1">Plan</div>
           </button>
-          <button onClick={() => nav("/calendar")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
+          <button onClick={() => nav("/calendar")} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">View</div>
-            <div className="font-display text-lg mt-1">Calendar</div>
+            <div className="font-display text-base mt-1">Calendar</div>
           </button>
-          <button onClick={() => nav("/library")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
+          <button onClick={() => nav("/library")} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">Library</div>
-            <div className="font-display text-lg mt-1">Movements</div>
+            <div className="font-display text-base mt-1">Movements</div>
           </button>
-          <button onClick={() => nav("/stats")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
-            <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">Insight</div>
-            <div className="font-display text-lg mt-1">Stats</div>
-          </button>
-          <button onClick={() => nav("/plan/upload")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
+          <button onClick={() => nav("/plan/upload")} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">Plan</div>
-            <div className="font-display text-lg mt-1">Upload</div>
+            <div className="font-display text-base mt-1">Upload</div>
           </button>
         </section>
       </main>
@@ -228,6 +236,7 @@ export default function Home() {
           }
         }}
       />
+      <AddSessionMenu open={logMenuOpen} onClose={() => setLogMenuOpen(false)} date={todayStr} />
     </>
   );
 }
@@ -238,6 +247,7 @@ type TimelinePoint = {
   color: string;
   isToday: boolean;
   label: string;
+  fullLabel: string;
 };
 
 function abbrev(s: string): string {
