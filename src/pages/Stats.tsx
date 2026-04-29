@@ -14,7 +14,11 @@ import type { LogDocument } from "@/lib/types";
 
 type LogRow = { id: string; log_date: string; status: string; total_seconds: number | null; data: LogDocument };
 
-function epley(weight: number, reps: number) { return weight * (1 + reps / 30); }
+/** Brzycki 1RM — more aggressive than Epley at moderate reps. Falls back to Epley above 36 reps. */
+function brzycki(weight: number, reps: number) {
+  if (reps <= 0) return weight;
+  return reps >= 37 ? weight * (1 + reps / 30) : (weight * 36) / (37 - reps);
+}
 function isoWeek(d: Date) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const dayNum = date.getUTCDay() || 7;
@@ -61,7 +65,7 @@ export default function Stats() {
           if (typeof w === "number" && typeof r === "number" && w > 0 && r > 0) {
             vol += w * r;
             const arr = perMovement.get(it.name) ?? [];
-            arr.push({ date: log.log_date, weight: w, reps: r, e1rm: epley(w, r) });
+            arr.push({ date: log.log_date, weight: w, reps: r, e1rm: brzycki(w, r) });
             perMovement.set(it.name, arr);
           }
         }

@@ -4,14 +4,16 @@ import { useNavigate } from "react-router-dom";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
 import { DayPreviewDialog } from "@/components/DayPreviewDialog";
+import { AddSessionMenu } from "@/components/AddSessionMenu";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
 import { cn, sessionTypeFromDayKey } from "@/lib/utils";
 import { appConfig } from "@/config/app.config";
-import type { ParsedPlan, PlanDay } from "@/lib/types";
+import type { ParsedPlan, PlanDay, LogDocument } from "@/lib/types";
 
 type LogRow = { id: string; log_date: string; day_key: string | null; status: string; total_seconds: number | null; tags: string[] | null; activity_type: string | null };
+type StatsLogRow = LogRow & { data?: LogDocument };
 type PlanRow = { id: string; name: string; parsed: ParsedPlan; start_date: string | null; end_date: string | null; is_active: boolean };
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -49,10 +51,11 @@ export default function Home() {
   const { user } = useSession();
   const [plan, setPlan] = useState<PlanRow | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
-  const [allLogs, setAllLogs] = useState<LogRow[]>([]);
+  const [allLogs, setAllLogs] = useState<StatsLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeDay, setActiveDay] = useState<string | null>(null);
   const [previewDay, setPreviewDay] = useState<PlanDay | null>(null);
+  const [logMenuOpen, setLogMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -62,12 +65,12 @@ export default function Home() {
       const [{ data: planData }, { data: recentData }, { data: allLogsData }] = await Promise.all([
         supabase.from("plans").select("id,name,parsed,start_date,end_date,is_active").eq("owner_user_id", user.id).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type,created_at").eq("owner_user_id", user.id).in("status", ["done", "in_progress"]).order("log_date", { ascending: false }).order("created_at", { ascending: false }).limit(5),
-        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type,created_at").eq("owner_user_id", user.id).neq("status", "cancelled").order("log_date", { ascending: false }).order("created_at", { ascending: false }),
+        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type,data,created_at").eq("owner_user_id", user.id).neq("status", "cancelled").order("log_date", { ascending: false }).order("created_at", { ascending: false }),
       ]);
       if (cancelled) return;
       setPlan((planData as unknown as PlanRow) ?? null);
       setLogs((recentData as LogRow[]) ?? []);
-      setAllLogs((allLogsData as LogRow[]) ?? []);
+      setAllLogs((allLogsData as unknown as StatsLogRow[]) ?? []);
       setActiveDay((cur) => cur ?? DAY_NAMES[new Date().getDay()]);
       setLoading(false);
     }
@@ -101,6 +104,7 @@ export default function Home() {
 
   const today = new Date();
   const todayDayName = DAY_NAMES[today.getDay()];
+  const todayStr = ymd(today);
   const week = isoWeekIndexFromStart(plan?.start_date ?? plan?.parsed?.startDate ?? null);
 
   const lastByDay = useMemo(() => {
@@ -111,6 +115,17 @@ export default function Home() {
     }
     return map;
   }, [logs]);
+
+  // ---- Inline stats (computed from allLogs) ----
+  const homeStats = useMemo(() => {
+    let totalSeconds = 0;
+    const oneRm = new Map<string, { weight: number; reps: number; e1rm: number; date: string }>();
+    for (const l of allLogs) {
+      if (l.status !== "done") continue;
+      totalSeconds += l.total_seconds ?? 0;
+    }
+    return { sessions: allLogs.filter((l) => l.status === "done").length, totalSeconds, oneRm };
+  }, [allLogs]);
 
   return (
     <>
@@ -185,34 +200,28 @@ export default function Home() {
           </ul>
         </section>
 
-        <section className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <button onClick={() => nav("/log/new?mode=custom")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
+        <HomeStats logs={allLogs} sessions={homeStats.sessions} totalSeconds={homeStats.totalSeconds} />
+
+        <section className="mt-10 grid grid-cols-3 sm:grid-cols-5 gap-2">
+          <button onClick={() => setLogMenuOpen(true)} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">New</div>
-            <div className="font-display text-lg mt-1">Blank workout</div>
+            <div className="font-display text-base mt-1">Log</div>
           </button>
-          <button onClick={() => nav("/log/activity")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
-            <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">New</div>
-            <div className="font-display text-lg mt-1">Activity</div>
-          </button>
-          <button onClick={() => nav("/plan")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
+          <button onClick={() => nav("/plan")} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">View</div>
-            <div className="font-display text-lg mt-1">Plan</div>
+            <div className="font-display text-base mt-1">Plan</div>
           </button>
-          <button onClick={() => nav("/calendar")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
+          <button onClick={() => nav("/calendar")} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">View</div>
-            <div className="font-display text-lg mt-1">Calendar</div>
+            <div className="font-display text-base mt-1">Calendar</div>
           </button>
-          <button onClick={() => nav("/library")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
+          <button onClick={() => nav("/library")} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">Library</div>
-            <div className="font-display text-lg mt-1">Movements</div>
+            <div className="font-display text-base mt-1">Movements</div>
           </button>
-          <button onClick={() => nav("/stats")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
-            <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">Insight</div>
-            <div className="font-display text-lg mt-1">Stats</div>
-          </button>
-          <button onClick={() => nav("/plan/upload")} className="border hairline p-4 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
+          <button onClick={() => nav("/plan/upload")} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">Plan</div>
-            <div className="font-display text-lg mt-1">Upload</div>
+            <div className="font-display text-base mt-1">Upload</div>
           </button>
         </section>
       </main>
@@ -228,6 +237,7 @@ export default function Home() {
           }
         }}
       />
+      <AddSessionMenu open={logMenuOpen} onClose={() => setLogMenuOpen(false)} date={todayStr} />
     </>
   );
 }
@@ -238,6 +248,7 @@ type TimelinePoint = {
   color: string;
   isToday: boolean;
   label: string;
+  fullLabel: string;
 };
 
 function abbrev(s: string): string {
@@ -294,24 +305,28 @@ function buildTimeline(plan: PlanRow, logs: LogRow[]): TimelinePoint[] {
     let state: TimelinePoint["state"];
     let color: string;
     let label: string;
+    let fullLabel: string;
 
     if (log) {
       state = "done";
       color = colorForLog(log);
       const dn = (log.day_key ?? "").split("—")[1]?.trim() ?? log.day_key ?? "Done";
       label = abbrev(dn) || "Done";
+      fullLabel = dn || "Done";
     } else if (planDay && cursor.getTime() >= today.getTime()) {
       const tag = appConfig.activity.dayTypeTag(planDay.type);
       color = appConfig.activity.tagColors[tag] ?? appConfig.activity.fallbackColor;
       label = abbrev(planDay.type) || planDay.type.slice(0, 5);
+      fullLabel = planDay.type;
       state = "planned";
     } else {
       state = "blank";
       color = appConfig.activity.fallbackColor;
       label = "Rest";
+      fullLabel = "Rest";
     }
 
-    points.push({ date: dateStr, state, color, isToday, label });
+    points.push({ date: dateStr, state, color, isToday, label, fullLabel });
     cursor.setDate(cursor.getDate() + 1);
   }
 
@@ -386,13 +401,16 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
                 key={p.date + i}
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setPeekIndex((cur) => (cur === i ? null : i)); }}
+                onMouseEnter={() => setPeekIndex(i)}
+                onMouseLeave={() => setPeekIndex((cur) => (cur === i ? null : cur))}
                 className={cls}
                 style={style}
-                aria-label={`${p.date} ${p.label}`}
+                aria-label={`${p.date} ${p.fullLabel}`}
+                title={`${p.fullLabel} · ${p.date}`}
               >
                 {isPeek && (
                   <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 z-20 px-2 py-1 bg-foreground text-background text-[0.6rem] uppercase tracking-[0.12em] font-mono whitespace-nowrap pointer-events-none flex flex-col items-center gap-0.5">
-                    <span>{p.label}</span>
+                    <span>{p.fullLabel}</span>
                     <span className="text-background/60 normal-case tracking-normal text-[0.55rem]">{p.date}</span>
                   </span>
                 )}
@@ -458,5 +476,70 @@ function DayRail(props: {
         </div>
       )}
     </div>
+  );
+}
+
+/** Brzycki 1RM — more aggressive than Epley. */
+function brzycki(weight: number, reps: number): number {
+  if (reps <= 0) return weight;
+  return reps >= 37 ? weight * (1 + reps / 30) : (weight * 36) / (37 - reps);
+}
+
+function HomeStats({ logs, sessions, totalSeconds }: { logs: StatsLogRow[]; sessions: number; totalSeconds: number }) {
+  const nav = useNavigate();
+  const oneRm = useMemo(() => {
+    const best = new Map<string, { e1rm: number; weight: number; reps: number; date: string }>();
+    for (const l of logs) {
+      if (l.status !== "done") continue;
+      const doc = l.data;
+      if (!doc?.sections) continue;
+      for (const sec of doc.sections) for (const g of sec.groups) for (const it of g.items) {
+        for (const set of it.sets) {
+          const w = set.actual.weight, r = set.actual.reps;
+          if (typeof w !== "number" || typeof r !== "number" || w <= 0 || r <= 0) continue;
+          const e = brzycki(w, r);
+          const cur = best.get(it.name);
+          if (!cur || e > cur.e1rm) best.set(it.name, { e1rm: e, weight: w, reps: r, date: l.log_date });
+        }
+      }
+    }
+    return Array.from(best.entries()).sort((a, b) => b[1].e1rm - a[1].e1rm).slice(0, 5);
+  }, [logs]);
+
+  return (
+    <section className="mt-10">
+      <div className="flex items-baseline justify-between">
+        <h3 className="font-display text-xl uppercase tracking-[-0.04em]">Stats</h3>
+        <button onClick={() => nav("/stats")} className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss">All</button>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="border hairline p-3">
+          <div className="text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">Sessions</div>
+          <div className="font-display text-2xl tracking-[-0.04em] mt-1">{sessions}</div>
+        </div>
+        <div className="border hairline p-3">
+          <div className="text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground">Total time</div>
+          <div className="font-display text-2xl tracking-[-0.04em] mt-1">{fmtLong(totalSeconds)}</div>
+        </div>
+      </div>
+      <div className="mt-3 border hairline">
+        <div className="px-3 py-2 text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground border-b hairline">All-time 1RM (Brzycki)</div>
+        {oneRm.length === 0 ? (
+          <div className="px-3 py-3 text-xs text-muted-foreground uppercase tracking-[0.12em]">Log some sets to see estimates</div>
+        ) : (
+          <ul className="divide-y hairline">
+            {oneRm.map(([name, v]) => (
+              <li key={name} className="flex items-baseline justify-between gap-3 px-3 py-2">
+                <span className="font-display text-sm tracking-[-0.03em] truncate">{name}</span>
+                <span className="text-xs font-mono text-muted-foreground shrink-0">
+                  <span className="text-foreground">{Math.round(v.e1rm)}kg</span>
+                  <span className="ml-2 text-[0.6rem] uppercase tracking-[0.12em]">from {v.weight}×{v.reps}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }
