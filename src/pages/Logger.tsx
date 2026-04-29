@@ -835,10 +835,30 @@ export default function Logger() {
           onPick={(mov) => {
             if (pickerOpen.kind === "swap" && pickerOpen.groupId !== undefined && pickerOpen.itemIndex !== undefined) {
               swapMovement({ sectionId: pickerOpen.sectionId, groupId: pickerOpen.groupId, itemIndex: pickerOpen.itemIndex }, mov);
+            } else if (pickerOpen.groupId !== undefined) {
+              // Add into an existing group (used by SupersetPicker → "+ New movement").
+              addMovementToGroup(pickerOpen.sectionId, pickerOpen.groupId, mov);
             } else {
               addMovement(pickerOpen.sectionId, mov);
             }
             setPickerOpen(null);
+          }}
+        />
+      )}
+
+      {/* Superset picker — choose another movement in the same day to pair with */}
+      {supersetPicker && doc && (
+        <SupersetPicker
+          doc={doc}
+          target={supersetPicker}
+          onClose={() => setSupersetPicker(null)}
+          onPickExisting={(src) => {
+            mergeIntoSuperset(supersetPicker, src);
+            setSupersetPicker(null);
+          }}
+          onPickNew={() => {
+            setPickerOpen({ kind: "add", sectionId: supersetPicker.sectionId, groupId: supersetPicker.groupId });
+            setSupersetPicker(null);
           }}
         />
       )}
