@@ -940,9 +940,9 @@ function ItemRow(props: {
   return (
     <div className={`border-t hairline first:border-t-0 ${selected ? "bg-secondary" : ""}`}>
       <div className="flex items-center justify-between gap-2 py-2 px-1" {...lp}>
-        <div className="flex items-baseline gap-2 min-w-0">
+        <div className="flex flex-col min-w-0">
           <span className="font-display text-base tracking-[-0.03em] truncate">{item.name}</span>
-          {item.notations.map((n) => <span key={n} className="chip">{n}</span>)}
+          <MovementMeta item={item} />
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <RestEditor label="Rest" seconds={item.restBetweenSetsSeconds} onChange={props.onItemRest} onStart={() => onStartRest(item.restBetweenSetsSeconds, item.name)} compact />
