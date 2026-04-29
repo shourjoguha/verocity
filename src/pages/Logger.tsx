@@ -1172,80 +1172,92 @@ function SetRow(props: {
   onChange: (m: Metric, v: number | null) => void;
   onToggleComplete: () => void;
   onRemove: () => void;
-  onToggleNotation: (tag: string) => void;
   onStartRest: () => void;
 }) {
   const { idx, set, cols } = props;
-  const [dx, setDx] = useState(0);
-  const [revealed, setRevealed] = useState(false);
-  const startX = useRef<number | null>(null);
+  // Elastic swipe-to-delete: idle → revealed (with 500ms friction lock) → delete on continued drag.
   const REVEAL = 72;
-  const THRESHOLD = 40;
+  const REVEAL_THRESHOLD = 40;
+  const DELETE_THRESHOLD = 140;
+  const FRICTION_MS = 500;
+  const [dx, setDx] = useState(0);
+  const [phase, setPhase] = useState<"idle" | "revealed" | "frictionLocked">("idle");
+  const startX = useRef<number | null>(null);
+  const animatingRef = useRef(true);
+  const frictionTimer = useRef<number | null>(null);
+
+  useEffect(() => () => { if (frictionTimer.current) window.clearTimeout(frictionTimer.current); }, []);
 
   function onPointerDown(e: React.PointerEvent<HTMLTableRowElement>) {
     const target = e.target as HTMLElement;
     if (target.closest("input,button")) return;
     startX.current = e.clientX;
+    animatingRef.current = false;
     try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* noop */ }
   }
   function onPointerMove(e: React.PointerEvent<HTMLTableRowElement>) {
     if (startX.current == null) return;
+    if (phase === "frictionLocked") return; // ignore movement during settle
     const delta = e.clientX - startX.current;
-    const base = revealed ? -REVEAL : 0;
-    const next = Math.min(0, Math.max(-REVEAL, base + delta));
+    const base = phase === "revealed" ? -REVEAL : 0;
+    let next = base + delta;
+    if (next > 0) next = 0;
+    // Rubber-band past REVEAL when swiping further left
+    if (next < -REVEAL) {
+      const overshoot = -REVEAL - next;
+      next = -REVEAL - overshoot * 0.45;
+    }
     setDx(next);
   }
   function onPointerUp(e: React.PointerEvent<HTMLTableRowElement>) {
     if (startX.current == null) return;
     const delta = e.clientX - startX.current;
     startX.current = null;
+    animatingRef.current = true;
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ }
-    if (revealed) {
-      if (delta > THRESHOLD) { setRevealed(false); setDx(0); }
-      else { setDx(-REVEAL); }
+
+    // Past delete threshold from any state → delete
+    if (dx <= -DELETE_THRESHOLD) {
+      props.onRemove();
+      return;
+    }
+
+    if (phase === "revealed") {
+      // Right-swipe to dismiss
+      if (delta > REVEAL_THRESHOLD) {
+        setPhase("idle");
+        setDx(0);
+      } else {
+        setDx(-REVEAL);
+      }
     } else {
-      if (delta < -THRESHOLD) { setRevealed(true); setDx(-REVEAL); }
-      else { setDx(0); }
+      if (delta < -REVEAL_THRESHOLD) {
+        setPhase("revealed");
+        setDx(-REVEAL);
+        // Friction window: ignore further drags briefly so the bounce settles.
+        setPhase("frictionLocked");
+        if (frictionTimer.current) window.clearTimeout(frictionTimer.current);
+        frictionTimer.current = window.setTimeout(() => {
+          setPhase("revealed");
+          frictionTimer.current = null;
+        }, FRICTION_MS);
+      } else {
+        setDx(0);
+      }
     }
   }
-  function closeSwipe() { setRevealed(false); setDx(0); }
+  function closeSwipe() { setPhase("idle"); setDx(0); animatingRef.current = true; }
 
   return (
     <tr
       className={cn("relative", set.actual.completed && "opacity-60")}
-      style={{ transform: `translateX(${dx}px)`, transition: startX.current == null ? "transform 200ms cubic-bezier(0.22,1,0.36,1)" : undefined }}
+      style={{ transform: `translateX(${dx}px)`, transition: animatingRef.current ? "transform 280ms cubic-bezier(0.34,1.56,0.64,1)" : undefined }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
       <td className="font-mono text-xs">{idx + 1}</td>
-      <td className="text-xs text-muted-foreground whitespace-nowrap">
-        <span className="font-mono">{set.planned?.raw ?? "—"}</span>
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="ml-1 align-middle text-[0.55rem] uppercase tracking-[0.12em] border hairline px-1">tags</button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-48 p-2">
-            <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground mb-2">Notations</div>
-            <div className="flex flex-wrap gap-1">
-              {appConfig.notations.map((n) => {
-                const active = set.notations.includes(n.label);
-                return (
-                  <button
-                    key={n.label}
-                    onClick={() => props.onToggleNotation(n.label)}
-                    className={`text-[0.6rem] uppercase tracking-[0.1em] px-1.5 py-0.5 border ${active ? "bg-foreground text-background border-foreground" : "hairline"}`}
-                    title={n.meaning}
-                  >
-                    {n.label}
-                  </button>
-                );
-              })}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </td>
       {cols.map((m) => {
         const step = m === "rpe" || m === "weight" ? 0.5 : 1;
         return (
