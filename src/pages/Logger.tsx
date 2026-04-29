@@ -985,7 +985,6 @@ function ItemRow(props: {
                 onChange={(m, v) => props.onSetActual(i, m, v)}
                 onToggleComplete={() => props.onToggleComplete(i)}
                 onRemove={() => props.onRemoveSet(i)}
-                onToggleNotation={(tag) => props.onToggleNotation(i, tag)}
                 onStartRest={() => onStartRest(s.restAfterSeconds ?? item.restBetweenSetsSeconds, `${item.name} · set ${i + 1}`)}
               />
             ))}
