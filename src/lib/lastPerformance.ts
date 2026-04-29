@@ -45,7 +45,7 @@ function findRecentSet(history: HistoryRow[], movementName: string, sectionName:
   return null;
 }
 
-const FILLABLE: Metric[] = ["weight", "reps", "time", "distance"];
+const FILLABLE: Metric[] = ["weight", "reps", "rpe", "time", "distance"];
 
 /** Mutates `doc` in place; returns it for convenience. */
 export function prefillFromHistory(doc: LogDocument, history: HistoryRow[]): LogDocument {

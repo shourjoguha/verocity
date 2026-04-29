@@ -73,6 +73,7 @@ export default function Logger() {
   const [accumSec, setAccumSec] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pickerOpen, setPickerOpen] = useState<{ kind: "swap" | "add"; sectionId: string; groupId?: string; itemIndex?: number } | null>(null);
+  const [supersetPicker, setSupersetPicker] = useState<{ sectionId: string; groupId: string; itemIndex: number } | null>(null);
   const [restTimer, setRestTimer] = useState<{ targetSeconds: number; label: string } | null>(null);
   const [savedTick, setSavedTick] = useState(0);
   const [warmupNote, setWarmupNote] = useState<string>("");
@@ -145,6 +146,10 @@ export default function Logger() {
           setTags([inferred]);
           if (planDay.warmup) setWarmupNote(planDay.warmup);
         }
+        // Auto-start the timer for any newly-opened session (plan-driven or custom).
+        setStartedAt(new Date().toISOString());
+        setStatus("in_progress");
+        sw.start();
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,6 +169,8 @@ export default function Logger() {
 
   async function saveLog(showToast = true) {
     if (!user || !doc) return;
+    sw.pause();
+    if (status === "in_progress") setStatus("paused");
     dirtyRef.current = false;
     const payload = {
       owner_user_id: user.id,
@@ -460,6 +467,80 @@ export default function Logger() {
       else set.notations.push(tag);
     });
   }
+  /** Toggle a notation across every set of an item (movement-level). */
+  function toggleItemNotation(sectionId: string, groupId: string, itemIdx: number, tag: string) {
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId)!;
+      const g = s.groups.find((x) => x.id === groupId)!;
+      const it = g.items[itemIdx];
+      const allHave = it.sets.length > 0 && it.sets.every((st) => st.notations.includes(tag));
+      for (const st of it.sets) {
+        const i = st.notations.indexOf(tag);
+        if (allHave) {
+          if (i >= 0) st.notations.splice(i, 1);
+        } else {
+          if (i < 0) st.notations.push(tag);
+        }
+      }
+      // Also reflect on the item-level notations array for the header chip display.
+      const headerHas = it.notations.includes(tag);
+      if (allHave && headerHas) it.notations.splice(it.notations.indexOf(tag), 1);
+      if (!allHave && !headerHas) it.notations.push(tag);
+    });
+  }
+  /** Merge a source movement into a target group as a superset (same section). */
+  function mergeIntoSuperset(target: { sectionId: string; groupId: string; itemIndex: number }, source: { sectionId: string; groupId: string; itemIndex: number }) {
+    if (target.sectionId !== source.sectionId) {
+      toast.error("Superset within the same section.");
+      return;
+    }
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === target.sectionId)!;
+      const srcGroupIdx = s.groups.findIndex((x) => x.id === source.groupId);
+      if (srcGroupIdx < 0) return;
+      const srcGroup = s.groups[srcGroupIdx];
+      const [moved] = srcGroup.items.splice(source.itemIndex, 1);
+      if (!moved) return;
+      if (srcGroup.items.length === 0) s.groups.splice(srcGroupIdx, 1);
+      const tgt = s.groups.find((x) => x.id === target.groupId);
+      if (!tgt) return;
+      if (tgt.kind === "single") {
+        tgt.kind = "superset";
+        if (tgt.restWithinSeconds === undefined) tgt.restWithinSeconds = appConfig.timer.defaults.withinSupersetSeconds;
+        if (tgt.restAfterRoundSeconds === undefined) tgt.restAfterRoundSeconds = appConfig.timer.defaults.afterSupersetSeconds;
+      }
+      const insertAt = Math.min(target.itemIndex + 1, tgt.items.length);
+      tgt.items.splice(insertAt, 0, moved);
+    });
+  }
+  /** Add a new movement directly into an existing group as part of a superset. */
+  function addMovementToGroup(sectionId: string, groupId: string, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId)!;
+      const g = s.groups.find((x) => x.id === groupId);
+      if (!g) return;
+      const set = new Set<Metric>(mov.metrics);
+      set.add("weight");
+      const present = SWAPPABLE.filter((m) => set.has(m));
+      const keep = present[0] ?? "reps";
+      for (const m of SWAPPABLE) set.delete(m);
+      set.add(keep);
+      g.items.push({
+        movementId: mov.id,
+        name: mov.name,
+        metrics: Array.from(set),
+        primaryMetric: mov.primaryMetric,
+        notations: [],
+        sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
+        restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
+      });
+      if (g.kind === "single") {
+        g.kind = "superset";
+        if (g.restWithinSeconds === undefined) g.restWithinSeconds = appConfig.timer.defaults.withinSupersetSeconds;
+        if (g.restAfterRoundSeconds === undefined) g.restAfterRoundSeconds = appConfig.timer.defaults.afterSupersetSeconds;
+      }
+    });
+  }
   function swapMetric(sectionId: string, groupId: string, itemIdx: number, oldMetric: SwappableMetric, newMetric: SwappableMetric) {
     if (oldMetric === newMetric) return;
     updateDoc((d) => {
@@ -694,6 +775,8 @@ export default function Logger() {
                         onSwap={(g, i) => setPickerOpen({ kind: "swap", sectionId: section.id, groupId: g, itemIndex: i })}
                         onSwapMetric={swapMetric}
                         onToggleNotation={toggleNotation}
+                        onToggleItemNotation={toggleItemNotation}
+                        onSuperset={(sId, gId, i) => setSupersetPicker({ sectionId: sId, groupId: gId, itemIndex: i })}
                         onStartRest={(seconds, label) => setRestTimer({ targetSeconds: seconds, label })}
                       />
                     ))}
@@ -752,10 +835,30 @@ export default function Logger() {
           onPick={(mov) => {
             if (pickerOpen.kind === "swap" && pickerOpen.groupId !== undefined && pickerOpen.itemIndex !== undefined) {
               swapMovement({ sectionId: pickerOpen.sectionId, groupId: pickerOpen.groupId, itemIndex: pickerOpen.itemIndex }, mov);
+            } else if (pickerOpen.groupId !== undefined) {
+              // Add into an existing group (used by SupersetPicker → "+ New movement").
+              addMovementToGroup(pickerOpen.sectionId, pickerOpen.groupId, mov);
             } else {
               addMovement(pickerOpen.sectionId, mov);
             }
             setPickerOpen(null);
+          }}
+        />
+      )}
+
+      {/* Superset picker — choose another movement in the same day to pair with */}
+      {supersetPicker && doc && (
+        <SupersetPicker
+          doc={doc}
+          target={supersetPicker}
+          onClose={() => setSupersetPicker(null)}
+          onPickExisting={(src) => {
+            mergeIntoSuperset(supersetPicker, src);
+            setSupersetPicker(null);
+          }}
+          onPickNew={() => {
+            setPickerOpen({ kind: "add", sectionId: supersetPicker.sectionId, groupId: supersetPicker.groupId });
+            setSupersetPicker(null);
           }}
         />
       )}
@@ -764,6 +867,54 @@ export default function Logger() {
 }
 
 /* ------------------ Subcomponents ------------------ */
+
+/** Subtext under the movement name showing planned set notation + accumulated tags. */
+function MovementMeta({ item }: { item: LogItem }) {
+  const planned = item.sets[0]?.planned?.raw ?? "";
+  const tagSet = new Set<string>(item.notations);
+  for (const s of item.sets) for (const t of s.notations) tagSet.add(t);
+  const tags = Array.from(tagSet).join(" ");
+  if (!planned && !tags) return null;
+  return (
+    <span className="text-[0.6rem] uppercase tracking-[0.12em] text-muted-foreground font-mono mt-0.5 truncate">
+      {planned}{planned && tags ? " · " : ""}{tags}
+    </span>
+  );
+}
+
+/** Tags submenu inside the Settings2 popover; toggles a notation across all sets. */
+function TagsSubmenu({ item, onToggle }: { item: LogItem; onToggle: (tag: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const active = new Set<string>(item.notations);
+  for (const s of item.sets) for (const t of s.notations) active.add(t);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"
+      >
+        <Pencil className="h-3 w-3" /> Tags
+      </button>
+      {open && (
+        <div className="border-t hairline p-2 flex flex-wrap gap-1">
+          {appConfig.notations.map((n) => {
+            const on = active.has(n.label);
+            return (
+              <button
+                key={n.label}
+                onClick={() => onToggle(n.label)}
+                className={`text-[0.6rem] uppercase tracking-[0.1em] px-1.5 py-0.5 border ${on ? "bg-foreground text-background border-foreground" : "hairline"}`}
+                title={n.meaning}
+              >
+                {n.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SectionTitle({ name, editable, onRename, onRemove }: { name: string; editable: boolean; onRename: (n: string) => void; onRemove: () => void }) {
   const [editing, setEditing] = useState(false);
@@ -858,6 +1009,8 @@ function GroupBlock(props: {
   onSwap: (groupId: string, itemIdx: number) => void;
   onSwapMetric: (sectionId: string, groupId: string, itemIdx: number, oldMetric: SwappableMetric, newMetric: SwappableMetric) => void;
   onToggleNotation: (sectionId: string, groupId: string, itemIdx: number, setIdx: number, tag: string) => void;
+  onToggleItemNotation: (sectionId: string, groupId: string, itemIdx: number, tag: string) => void;
+  onSuperset: (sectionId: string, groupId: string, itemIdx: number) => void;
   onStartRest: (seconds: number, label: string) => void;
 }) {
   const { section, group, allSections } = props;
@@ -891,6 +1044,8 @@ function GroupBlock(props: {
           onSwap={() => props.onSwap(group.id, idx)}
           onSwapMetric={(oldM, newM) => props.onSwapMetric(section.id, group.id, idx, oldM, newM)}
           onToggleNotation={(setIdx, tag) => props.onToggleNotation(section.id, group.id, idx, setIdx, tag)}
+          onToggleItemNotation={(tag) => props.onToggleItemNotation(section.id, group.id, idx, tag)}
+          onSuperset={() => props.onSuperset(section.id, group.id, idx)}
           onStartRest={props.onStartRest}
         />
       ))}
@@ -917,6 +1072,8 @@ function ItemRow(props: {
   onSwap: () => void;
   onSwapMetric: (oldMetric: SwappableMetric, newMetric: SwappableMetric) => void;
   onToggleNotation: (setIdx: number, tag: string) => void;
+  onToggleItemNotation: (tag: string) => void;
+  onSuperset: () => void;
   onStartRest: (seconds: number, label: string) => void;
 }) {
   const { item, section, allSections, selected, onSelectToggle, onStartRest } = props;
@@ -934,9 +1091,9 @@ function ItemRow(props: {
   return (
     <div className={`border-t hairline first:border-t-0 ${selected ? "bg-secondary" : ""}`}>
       <div className="flex items-center justify-between gap-2 py-2 px-1" {...lp}>
-        <div className="flex items-baseline gap-2 min-w-0">
+        <div className="flex flex-col min-w-0">
           <span className="font-display text-base tracking-[-0.03em] truncate">{item.name}</span>
-          {item.notations.map((n) => <span key={n} className="chip">{n}</span>)}
+          <MovementMeta item={item} />
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <RestEditor label="Rest" seconds={item.restBetweenSetsSeconds} onChange={props.onItemRest} onStart={() => onStartRest(item.restBetweenSetsSeconds, item.name)} compact />
@@ -947,6 +1104,8 @@ function ItemRow(props: {
             <PopoverContent align="end" className="w-52 p-1">
               <button onClick={props.onSwap} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Replace className="h-3 w-3" /> Swap</button>
               <button onClick={props.onAddSet} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Plus className="h-3 w-3" /> Add set</button>
+              <button onClick={props.onSuperset} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Group className="h-3 w-3" /> Superset with…</button>
+              <TagsSubmenu item={item} onToggle={(tag) => props.onToggleItemNotation(tag)} />
               <MoveToSubmenu sections={allSections} currentSectionId={section.id} onMove={props.onMoveItem} />
               <button onClick={props.onRemoveItem} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Trash2 className="h-3 w-3" /> Remove</button>
             </PopoverContent>
@@ -956,11 +1115,10 @@ function ItemRow(props: {
       </div>
 
       <div className="overflow-x-auto edge-fade-x">
-        <table className="ll-table min-w-[420px]">
+        <table className="ll-table min-w-[360px]">
           <thead>
             <tr>
               <th className="w-8">#</th>
-              <th>Planned</th>
               {cols.map((m) => (
                 <th key={m} className="text-right">
                   {(SWAPPABLE as readonly string[]).includes(m) ? (
@@ -980,7 +1138,6 @@ function ItemRow(props: {
                 onChange={(m, v) => props.onSetActual(i, m, v)}
                 onToggleComplete={() => props.onToggleComplete(i)}
                 onRemove={() => props.onRemoveSet(i)}
-                onToggleNotation={(tag) => props.onToggleNotation(i, tag)}
                 onStartRest={() => onStartRest(s.restAfterSeconds ?? item.restBetweenSetsSeconds, `${item.name} · set ${i + 1}`)}
               />
             ))}
@@ -1167,80 +1324,92 @@ function SetRow(props: {
   onChange: (m: Metric, v: number | null) => void;
   onToggleComplete: () => void;
   onRemove: () => void;
-  onToggleNotation: (tag: string) => void;
   onStartRest: () => void;
 }) {
   const { idx, set, cols } = props;
-  const [dx, setDx] = useState(0);
-  const [revealed, setRevealed] = useState(false);
-  const startX = useRef<number | null>(null);
+  // Elastic swipe-to-delete: idle → revealed (with 500ms friction lock) → delete on continued drag.
   const REVEAL = 72;
-  const THRESHOLD = 40;
+  const REVEAL_THRESHOLD = 40;
+  const DELETE_THRESHOLD = 140;
+  const FRICTION_MS = 500;
+  const [dx, setDx] = useState(0);
+  const [phase, setPhase] = useState<"idle" | "revealed" | "frictionLocked">("idle");
+  const startX = useRef<number | null>(null);
+  const animatingRef = useRef(true);
+  const frictionTimer = useRef<number | null>(null);
+
+  useEffect(() => () => { if (frictionTimer.current) window.clearTimeout(frictionTimer.current); }, []);
 
   function onPointerDown(e: React.PointerEvent<HTMLTableRowElement>) {
     const target = e.target as HTMLElement;
     if (target.closest("input,button")) return;
     startX.current = e.clientX;
+    animatingRef.current = false;
     try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* noop */ }
   }
   function onPointerMove(e: React.PointerEvent<HTMLTableRowElement>) {
     if (startX.current == null) return;
+    if (phase === "frictionLocked") return; // ignore movement during settle
     const delta = e.clientX - startX.current;
-    const base = revealed ? -REVEAL : 0;
-    const next = Math.min(0, Math.max(-REVEAL, base + delta));
+    const base = phase === "revealed" ? -REVEAL : 0;
+    let next = base + delta;
+    if (next > 0) next = 0;
+    // Rubber-band past REVEAL when swiping further left
+    if (next < -REVEAL) {
+      const overshoot = -REVEAL - next;
+      next = -REVEAL - overshoot * 0.45;
+    }
     setDx(next);
   }
   function onPointerUp(e: React.PointerEvent<HTMLTableRowElement>) {
     if (startX.current == null) return;
     const delta = e.clientX - startX.current;
     startX.current = null;
+    animatingRef.current = true;
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ }
-    if (revealed) {
-      if (delta > THRESHOLD) { setRevealed(false); setDx(0); }
-      else { setDx(-REVEAL); }
+
+    // Past delete threshold from any state → delete
+    if (dx <= -DELETE_THRESHOLD) {
+      props.onRemove();
+      return;
+    }
+
+    if (phase === "revealed") {
+      // Right-swipe to dismiss
+      if (delta > REVEAL_THRESHOLD) {
+        setPhase("idle");
+        setDx(0);
+      } else {
+        setDx(-REVEAL);
+      }
     } else {
-      if (delta < -THRESHOLD) { setRevealed(true); setDx(-REVEAL); }
-      else { setDx(0); }
+      if (delta < -REVEAL_THRESHOLD) {
+        setPhase("revealed");
+        setDx(-REVEAL);
+        // Friction window: ignore further drags briefly so the bounce settles.
+        setPhase("frictionLocked");
+        if (frictionTimer.current) window.clearTimeout(frictionTimer.current);
+        frictionTimer.current = window.setTimeout(() => {
+          setPhase("revealed");
+          frictionTimer.current = null;
+        }, FRICTION_MS);
+      } else {
+        setDx(0);
+      }
     }
   }
-  function closeSwipe() { setRevealed(false); setDx(0); }
+  function closeSwipe() { setPhase("idle"); setDx(0); animatingRef.current = true; }
 
   return (
     <tr
       className={cn("relative", set.actual.completed && "opacity-60")}
-      style={{ transform: `translateX(${dx}px)`, transition: startX.current == null ? "transform 200ms cubic-bezier(0.22,1,0.36,1)" : undefined }}
+      style={{ transform: `translateX(${dx}px)`, transition: animatingRef.current ? "transform 280ms cubic-bezier(0.34,1.56,0.64,1)" : undefined }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
       <td className="font-mono text-xs">{idx + 1}</td>
-      <td className="text-xs text-muted-foreground whitespace-nowrap">
-        <span className="font-mono">{set.planned?.raw ?? "—"}</span>
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="ml-1 align-middle text-[0.55rem] uppercase tracking-[0.12em] border hairline px-1">tags</button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-48 p-2">
-            <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground mb-2">Notations</div>
-            <div className="flex flex-wrap gap-1">
-              {appConfig.notations.map((n) => {
-                const active = set.notations.includes(n.label);
-                return (
-                  <button
-                    key={n.label}
-                    onClick={() => props.onToggleNotation(n.label)}
-                    className={`text-[0.6rem] uppercase tracking-[0.1em] px-1.5 py-0.5 border ${active ? "bg-foreground text-background border-foreground" : "hairline"}`}
-                    title={n.meaning}
-                  >
-                    {n.label}
-                  </button>
-                );
-              })}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </td>
       {cols.map((m) => {
         const step = m === "rpe" || m === "weight" ? 0.5 : 1;
         return (
@@ -1271,7 +1440,7 @@ function SetRow(props: {
           aria-label="Toggle complete"
         />
         <div
-          aria-hidden={!revealed}
+          aria-hidden={phase !== "revealed"}
           className="absolute top-0 left-full h-full flex items-center justify-center"
           style={{ width: REVEAL, backgroundColor: "hsl(0 50% 27%)" }}
         >
@@ -1418,5 +1587,65 @@ function CompactWarmupSection(props: {
         </button>
       </AccordionContent>
     </AccordionItem>
+  );
+}
+
+/** Modal: pick another movement (in the same section) to superset with, or add a new one. */
+function SupersetPicker(props: {
+  doc: LogDocument;
+  target: { sectionId: string; groupId: string; itemIndex: number };
+  onClose: () => void;
+  onPickExisting: (src: { sectionId: string; groupId: string; itemIndex: number }) => void;
+  onPickNew: () => void;
+}) {
+  const { doc, target } = props;
+  const section = doc.sections.find((s) => s.id === target.sectionId);
+  const targetGroup = section?.groups.find((g) => g.id === target.groupId);
+  const candidates: { srcSectionId: string; groupId: string; itemIndex: number; name: string }[] = [];
+  if (section) {
+    for (const g of section.groups) {
+      g.items.forEach((it, i) => {
+        if (g.id === target.groupId && i === target.itemIndex) return;
+        if (targetGroup && g.id === target.groupId) return; // already in same group
+        candidates.push({ srcSectionId: section.id, groupId: g.id, itemIndex: i, name: it.name });
+      });
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-50 bg-background/90 flex items-center justify-center p-4" onClick={props.onClose}>
+      <div className="bg-background border-2 border-foreground w-full max-w-sm max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-3 py-2 border-b hairline flex items-center justify-between">
+          <span className="font-display text-sm uppercase tracking-[-0.03em]">Superset with…</span>
+          <button onClick={props.onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {candidates.length === 0 ? (
+            <div className="px-3 py-4 text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">
+              No other movements in this section yet.
+            </div>
+          ) : (
+            <ul className="divide-y hairline">
+              {candidates.map((c) => (
+                <li key={`${c.groupId}-${c.itemIndex}`}>
+                  <button
+                    onClick={() => props.onPickExisting({ sectionId: c.srcSectionId, groupId: c.groupId, itemIndex: c.itemIndex })}
+                    className="w-full text-left px-3 py-2.5 hover:bg-secondary transition-colors"
+                  >
+                    <div className="font-display text-sm tracking-[-0.03em] truncate">{c.name}</div>
+                    <div className="text-[0.55rem] uppercase tracking-[0.14em] text-muted-foreground mt-0.5">{section?.name}</div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <button
+          onClick={props.onPickNew}
+          className="border-t-2 border-foreground py-3 text-xs uppercase tracking-[0.14em] hover:bg-secondary transition-colors flex items-center justify-center gap-2"
+        >
+          <Plus className="h-3 w-3" /> New movement
+        </button>
+      </div>
+    </div>
   );
 }
