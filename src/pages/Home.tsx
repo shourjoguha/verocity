@@ -51,7 +51,7 @@ export default function Home() {
   const { user } = useSession();
   const [plan, setPlan] = useState<PlanRow | null>(null);
   const [logs, setLogs] = useState<LogRow[]>([]);
-  const [allLogs, setAllLogs] = useState<LogRow[]>([]);
+  const [allLogs, setAllLogs] = useState<StatsLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeDay, setActiveDay] = useState<string | null>(null);
   const [previewDay, setPreviewDay] = useState<PlanDay | null>(null);
@@ -65,12 +65,12 @@ export default function Home() {
       const [{ data: planData }, { data: recentData }, { data: allLogsData }] = await Promise.all([
         supabase.from("plans").select("id,name,parsed,start_date,end_date,is_active").eq("owner_user_id", user.id).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
         supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type,created_at").eq("owner_user_id", user.id).in("status", ["done", "in_progress"]).order("log_date", { ascending: false }).order("created_at", { ascending: false }).limit(5),
-        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type,created_at").eq("owner_user_id", user.id).neq("status", "cancelled").order("log_date", { ascending: false }).order("created_at", { ascending: false }),
+        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type,data,created_at").eq("owner_user_id", user.id).neq("status", "cancelled").order("log_date", { ascending: false }).order("created_at", { ascending: false }),
       ]);
       if (cancelled) return;
       setPlan((planData as unknown as PlanRow) ?? null);
       setLogs((recentData as LogRow[]) ?? []);
-      setAllLogs((allLogsData as LogRow[]) ?? []);
+      setAllLogs((allLogsData as unknown as StatsLogRow[]) ?? []);
       setActiveDay((cur) => cur ?? DAY_NAMES[new Date().getDay()]);
       setLoading(false);
     }
