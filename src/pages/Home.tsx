@@ -13,6 +13,7 @@ import { appConfig } from "@/config/app.config";
 import type { ParsedPlan, PlanDay } from "@/lib/types";
 
 type LogRow = { id: string; log_date: string; day_key: string | null; status: string; total_seconds: number | null; tags: string[] | null; activity_type: string | null };
+type StatsLogRow = LogRow & { data?: LogDocument };
 type PlanRow = { id: string; name: string; parsed: ParsedPlan; start_date: string | null; end_date: string | null; is_active: boolean };
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
