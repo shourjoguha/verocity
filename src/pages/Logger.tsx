@@ -848,6 +848,54 @@ export default function Logger() {
 
 /* ------------------ Subcomponents ------------------ */
 
+/** Subtext under the movement name showing planned set notation + accumulated tags. */
+function MovementMeta({ item }: { item: LogItem }) {
+  const planned = item.sets[0]?.planned?.raw ?? "";
+  const tagSet = new Set<string>(item.notations);
+  for (const s of item.sets) for (const t of s.notations) tagSet.add(t);
+  const tags = Array.from(tagSet).join(" ");
+  if (!planned && !tags) return null;
+  return (
+    <span className="text-[0.6rem] uppercase tracking-[0.12em] text-muted-foreground font-mono mt-0.5 truncate">
+      {planned}{planned && tags ? " · " : ""}{tags}
+    </span>
+  );
+}
+
+/** Tags submenu inside the Settings2 popover; toggles a notation across all sets. */
+function TagsSubmenu({ item, onToggle }: { item: LogItem; onToggle: (tag: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const active = new Set<string>(item.notations);
+  for (const s of item.sets) for (const t of s.notations) active.add(t);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"
+      >
+        <Pencil className="h-3 w-3" /> Tags
+      </button>
+      {open && (
+        <div className="border-t hairline p-2 flex flex-wrap gap-1">
+          {appConfig.notations.map((n) => {
+            const on = active.has(n.label);
+            return (
+              <button
+                key={n.label}
+                onClick={() => onToggle(n.label)}
+                className={`text-[0.6rem] uppercase tracking-[0.1em] px-1.5 py-0.5 border ${on ? "bg-foreground text-background border-foreground" : "hairline"}`}
+                title={n.meaning}
+              >
+                {n.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SectionTitle({ name, editable, onRename, onRemove }: { name: string; editable: boolean; onRename: (n: string) => void; onRemove: () => void }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(name);
