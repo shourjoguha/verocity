@@ -953,6 +953,8 @@ function ItemRow(props: {
             <PopoverContent align="end" className="w-52 p-1">
               <button onClick={props.onSwap} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Replace className="h-3 w-3" /> Swap</button>
               <button onClick={props.onAddSet} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Plus className="h-3 w-3" /> Add set</button>
+              <button onClick={props.onSuperset} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Group className="h-3 w-3" /> Superset with…</button>
+              <TagsSubmenu item={item} onToggle={(tag) => props.onToggleItemNotation(tag)} />
               <MoveToSubmenu sections={allSections} currentSectionId={section.id} onMove={props.onMoveItem} />
               <button onClick={props.onRemoveItem} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Trash2 className="h-3 w-3" /> Remove</button>
             </PopoverContent>
