@@ -700,6 +700,8 @@ export default function Logger() {
                         onSwap={(g, i) => setPickerOpen({ kind: "swap", sectionId: section.id, groupId: g, itemIndex: i })}
                         onSwapMetric={swapMetric}
                         onToggleNotation={toggleNotation}
+                        onToggleItemNotation={toggleItemNotation}
+                        onSuperset={(sId, gId, i) => setSupersetPicker({ sectionId: sId, groupId: gId, itemIndex: i })}
                         onStartRest={(seconds, label) => setRestTimer({ targetSeconds: seconds, label })}
                       />
                     ))}
