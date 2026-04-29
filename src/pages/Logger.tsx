@@ -467,6 +467,80 @@ export default function Logger() {
       else set.notations.push(tag);
     });
   }
+  /** Toggle a notation across every set of an item (movement-level). */
+  function toggleItemNotation(sectionId: string, groupId: string, itemIdx: number, tag: string) {
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId)!;
+      const g = s.groups.find((x) => x.id === groupId)!;
+      const it = g.items[itemIdx];
+      const allHave = it.sets.length > 0 && it.sets.every((st) => st.notations.includes(tag));
+      for (const st of it.sets) {
+        const i = st.notations.indexOf(tag);
+        if (allHave) {
+          if (i >= 0) st.notations.splice(i, 1);
+        } else {
+          if (i < 0) st.notations.push(tag);
+        }
+      }
+      // Also reflect on the item-level notations array for the header chip display.
+      const headerHas = it.notations.includes(tag);
+      if (allHave && headerHas) it.notations.splice(it.notations.indexOf(tag), 1);
+      if (!allHave && !headerHas) it.notations.push(tag);
+    });
+  }
+  /** Merge a source movement into a target group as a superset (same section). */
+  function mergeIntoSuperset(target: { sectionId: string; groupId: string; itemIndex: number }, source: { sectionId: string; groupId: string; itemIndex: number }) {
+    if (target.sectionId !== source.sectionId) {
+      toast.error("Superset within the same section.");
+      return;
+    }
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === target.sectionId)!;
+      const srcGroupIdx = s.groups.findIndex((x) => x.id === source.groupId);
+      if (srcGroupIdx < 0) return;
+      const srcGroup = s.groups[srcGroupIdx];
+      const [moved] = srcGroup.items.splice(source.itemIndex, 1);
+      if (!moved) return;
+      if (srcGroup.items.length === 0) s.groups.splice(srcGroupIdx, 1);
+      const tgt = s.groups.find((x) => x.id === target.groupId);
+      if (!tgt) return;
+      if (tgt.kind === "single") {
+        tgt.kind = "superset";
+        if (tgt.restWithinSeconds === undefined) tgt.restWithinSeconds = appConfig.timer.defaults.withinSupersetSeconds;
+        if (tgt.restAfterRoundSeconds === undefined) tgt.restAfterRoundSeconds = appConfig.timer.defaults.afterSupersetSeconds;
+      }
+      const insertAt = Math.min(target.itemIndex + 1, tgt.items.length);
+      tgt.items.splice(insertAt, 0, moved);
+    });
+  }
+  /** Add a new movement directly into an existing group as part of a superset. */
+  function addMovementToGroup(sectionId: string, groupId: string, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId)!;
+      const g = s.groups.find((x) => x.id === groupId);
+      if (!g) return;
+      const set = new Set<Metric>(mov.metrics);
+      set.add("weight");
+      const present = SWAPPABLE.filter((m) => set.has(m));
+      const keep = present[0] ?? "reps";
+      for (const m of SWAPPABLE) set.delete(m);
+      set.add(keep);
+      g.items.push({
+        movementId: mov.id,
+        name: mov.name,
+        metrics: Array.from(set),
+        primaryMetric: mov.primaryMetric,
+        notations: [],
+        sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
+        restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
+      });
+      if (g.kind === "single") {
+        g.kind = "superset";
+        if (g.restWithinSeconds === undefined) g.restWithinSeconds = appConfig.timer.defaults.withinSupersetSeconds;
+        if (g.restAfterRoundSeconds === undefined) g.restAfterRoundSeconds = appConfig.timer.defaults.afterSupersetSeconds;
+      }
+    });
+  }
   function swapMetric(sectionId: string, groupId: string, itemIdx: number, oldMetric: SwappableMetric, newMetric: SwappableMetric) {
     if (oldMetric === newMetric) return;
     updateDoc((d) => {
