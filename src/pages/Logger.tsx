@@ -1253,87 +1253,148 @@ function StepperInput(props: {
   step: number;
   placeholder?: string;
   prefilled?: boolean;
+  clamp?: { min?: number; max?: number };
   onChange: (v: number | null) => void;
 }) {
-  const { value, step, placeholder, prefilled, onChange } = props;
-  const [hover, setHover] = useState(false);
-  const [focused, setFocused] = useState(false);
-  // On touch devices there is no hover; keep the steppers visible so they're reachable.
-  const isTouch = typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches;
-  const show = hover || focused || isTouch;
+  const { value, step, placeholder, prefilled, clamp, onChange } = props;
   const decimals = step < 1 ? 1 : 0;
-  const adjust = useCallback((dir: 1 | -1) => {
-    const cur = value ?? 0;
-    const next = Math.max(0, Number((cur + dir * step).toFixed(decimals)));
-    onChange(next);
-  }, [value, step, onChange, decimals]);
+  const min = clamp?.min ?? 0;
+  const max = clamp?.max ?? Number.POSITIVE_INFINITY;
+  const cfg = appConfig.touch.scrub;
 
-  // Long-press accelerator
-  const repeatRef = useRef<number | null>(null);
-  function startRepeat(dir: 1 | -1) {
-    adjust(dir);
-    let delay = 250;
-    const tick = () => {
-      adjust(dir);
-      delay = Math.max(40, delay * 0.85);
-      repeatRef.current = window.setTimeout(tick, delay);
-    };
-    repeatRef.current = window.setTimeout(tick, delay);
-  }
-  function stopRepeat() {
-    if (repeatRef.current) { window.clearTimeout(repeatRef.current); repeatRef.current = null; }
-  }
-  useEffect(() => () => stopRepeat(), []);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [scrubbing, setScrubbing] = useState(false);
+
+  // Pointer scrub state (refs to avoid re-render churn on every move)
+  const pointerIdRef = useRef<number | null>(null);
+  const startYRef = useRef(0);
+  const refYRef = useRef(0);          // moves in increments of pxPerStep as steps fire
+  const startValueRef = useRef(0);
+  const accStepsRef = useRef(0);
+  const engagedRef = useRef(false);
+  const holdTimerRef = useRef<number | null>(null);
+
+  const setValue = useCallback((next: number) => {
+    const clamped = Math.min(max, Math.max(min, Number(next.toFixed(decimals))));
+    onChange(clamped);
+    return clamped;
+  }, [onChange, decimals, min, max]);
+
+  const haptic = (ms: number) => {
+    if (appConfig.touch.hapticsEnabled && typeof navigator !== "undefined" && navigator.vibrate) {
+      try { navigator.vibrate(ms); } catch { /* noop */ }
+    }
+  };
+
+  const engage = useCallback(() => {
+    if (engagedRef.current) return;
+    engagedRef.current = true;
+    setScrubbing(true);
+    inputRef.current?.blur();
+    haptic(cfg.hapticPerStepMs);
+  }, [cfg.hapticPerStepMs]);
+
+  const clearHold = () => {
+    if (holdTimerRef.current) { window.clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!cfg.enabled) return;
+    if (pointerIdRef.current !== null) return; // ignore secondary pointers
+    pointerIdRef.current = e.pointerId;
+    startYRef.current = e.clientY;
+    refYRef.current = e.clientY;
+    startValueRef.current = value ?? 0;
+    accStepsRef.current = 0;
+    engagedRef.current = false;
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    holdTimerRef.current = window.setTimeout(() => { engage(); }, cfg.pressHoldMs);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerIdRef.current !== e.pointerId) return;
+    const dyTotal = e.clientY - startYRef.current;
+    if (!engagedRef.current && Math.abs(dyTotal) > cfg.deadzonePx) {
+      clearHold();
+      engage();
+    }
+    if (!engagedRef.current) return;
+    e.preventDefault();
+    const dy = e.clientY - refYRef.current;
+    const dirSign = cfg.invertY ? 1 : -1; // up (negative dy) => increase
+    const stepsDelta = Math.trunc(dy / cfg.pxPerStep) * dirSign * -1;
+    // Note: we want up=increase. dy<0 (moved up) => stepsDelta>0.
+    // Compute as: steps = trunc(-dy / pxPerStep) when invertY=false.
+    const steps = Math.trunc((cfg.invertY ? dy : -dy) / cfg.pxPerStep);
+    if (steps !== 0) {
+      accStepsRef.current += steps;
+      refYRef.current += steps * cfg.pxPerStep * (cfg.invertY ? 1 : -1);
+      const next = startValueRef.current + accStepsRef.current * step;
+      setValue(next);
+      haptic(cfg.hapticPerStepMs);
+    }
+    // Suppress unused warning
+    void stepsDelta;
+  };
+
+  const endPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerIdRef.current !== e.pointerId) return;
+    clearHold();
+    try { (e.currentTarget as Element).releasePointerCapture?.(e.pointerId); } catch { /* noop */ }
+    pointerIdRef.current = null;
+    if (engagedRef.current) {
+      engagedRef.current = false;
+      setScrubbing(false);
+    }
+  };
+
+  useEffect(() => () => clearHold(), []);
+
+  // Keyboard a11y: arrow keys still adjust like a native spinbutton
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowUp") { e.preventDefault(); setValue((value ?? 0) + step); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setValue((value ?? 0) - step); }
+  };
 
   return (
-    <div className="relative inline-block" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+    <motion.div
+      className={cn("relative inline-block select-none", scrubbing && "scrubbing")}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endPointer}
+      onPointerCancel={endPointer}
+      animate={{ scale: scrubbing ? cfg.magnifyScale : 1 }}
+      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+      style={{ transformOrigin: "right center" }}
+    >
       <input
+        ref={inputRef}
         type="number"
         inputMode="decimal"
         pattern="[0-9]*\.?[0-9]*"
         step={step}
         value={value ?? ""}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        role="spinbutton"
+        aria-valuemin={min}
+        aria-valuemax={Number.isFinite(max) ? max : undefined}
+        aria-valuenow={value ?? undefined}
+        onKeyDown={onKeyDown}
         onChange={(e) => {
           const v = e.target.value;
-          onChange(v === "" ? null : Number(v));
+          if (v === "") { onChange(null); return; }
+          const n = Number(v);
+          if (Number.isNaN(n)) return;
+          setValue(n);
         }}
+        readOnly={scrubbing}
         className={cn(
-          "w-16 text-right bg-transparent border-b hairline focus:border-foreground focus:outline-none transition-colors duration-slow ease-swiss font-mono pr-5 no-zoom-input py-1",
+          "w-16 text-right bg-transparent border-b hairline focus:border-foreground focus:outline-none transition-colors duration-slow ease-swiss font-mono no-zoom-input py-1",
+          scrubbing && "border-foreground",
           prefilled && "italic text-muted-foreground",
         )}
         placeholder={placeholder}
       />
-      {show && (
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex flex-col gap-0.5">
-          <button
-            type="button"
-            onMouseDown={(e) => { e.preventDefault(); startRepeat(1); }}
-            onMouseUp={stopRepeat} onMouseLeave={stopRepeat}
-            onTouchStart={(e) => { e.preventDefault(); startRepeat(1); }}
-            onTouchEnd={stopRepeat}
-            className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground"
-            tabIndex={-1}
-            aria-label="Increase"
-          >
-            <ChevronUp className="h-3 w-3" />
-          </button>
-          <button
-            type="button"
-            onMouseDown={(e) => { e.preventDefault(); startRepeat(-1); }}
-            onMouseUp={stopRepeat} onMouseLeave={stopRepeat}
-            onTouchStart={(e) => { e.preventDefault(); startRepeat(-1); }}
-            onTouchEnd={stopRepeat}
-            className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground"
-            tabIndex={-1}
-            aria-label="Decrease"
-          >
-            <ChevronDown className="h-3 w-3" />
-          </button>
-        </div>
-      )}
-    </div>
+    </motion.div>
   );
 }
 
