@@ -1338,9 +1338,11 @@ function SetRow(props: {
   onStartRest: () => void;
 }) {
   const { idx, set, cols } = props;
-  const REVEAL = 88;
+  const REVEAL = appConfig.touch.swipe.revealPx;
   const REVEAL_SNAP = REVEAL / 2;
-  const DELETE_THRESHOLD = REVEAL * 1.8;
+  const DELETE_THRESHOLD = appConfig.touch.swipe.deleteThresholdPx;
+  const VELOCITY_DELETE = appConfig.touch.swipe.velocityDeletePxPerSec;
+  const HAPTIC_MS = appConfig.touch.swipe.hapticMs;
   const x = useMotionValue(0);
   const actionOpacity = useTransform(x, [-REVEAL, -REVEAL_SNAP, 0], [1, 0.6, 0]);
   const labelOpacity = useTransform(x, [-REVEAL, -REVEAL * 0.85], [1, 0]);
@@ -1349,12 +1351,14 @@ function SetRow(props: {
   function onDragEnd(_: PointerEvent | MouseEvent | TouchEvent, info: PanInfo) {
     const ox = info.offset.x;
     const vx = info.velocity.x;
-    if (ox <= -DELETE_THRESHOLD || vx < -800) {
+    if (ox <= -DELETE_THRESHOLD || vx < -VELOCITY_DELETE) {
+      if (appConfig.touch.hapticsEnabled) try { navigator.vibrate?.(HAPTIC_MS); } catch { /* noop */ }
       animate(x, -600, { duration: 0.18, ease: [0.4, 0, 0.2, 1] });
       props.onRemove();
       return;
     }
     if (ox <= -REVEAL_SNAP) {
+      if (appConfig.touch.hapticsEnabled) try { navigator.vibrate?.(HAPTIC_MS); } catch { /* noop */ }
       animate(x, -REVEAL, spring);
     } else {
       animate(x, 0, spring);
@@ -1371,7 +1375,7 @@ function SetRow(props: {
       layout
       initial={false}
       exit={{ opacity: 0, x: -400, transition: { duration: 0.22, ease: [0.4, 0, 0.2, 1] } }}
-      className={cn("relative", set.actual.completed && "opacity-60")}
+      className={cn("relative swipe-row", set.actual.completed && "opacity-60")}
       style={{ x }}
       drag="x"
       dragConstraints={{ left: -REVEAL, right: 0 }}
