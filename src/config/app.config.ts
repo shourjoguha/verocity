@@ -163,6 +163,15 @@ export const appConfig = {
     },
     hapticsEnabled: true,
     safeArea: { top: true, bottom: true },
+    scrub: {
+      enabled: true,
+      pxPerStep: 12,
+      deadzonePx: 4,
+      pressHoldMs: 120,
+      magnifyScale: 1.25,
+      hapticPerStepMs: 5,
+      invertY: false,
+    },
   },
 } as const;
 
