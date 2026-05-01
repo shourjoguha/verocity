@@ -664,7 +664,7 @@ export default function Logger() {
   return (
     <>
       <TopBar title={dayKey || "Logger"} />
-      <main className="mx-auto max-w-3xl px-4 pb-32 pt-4">
+      <main className="mx-auto max-w-3xl px-4 pb-32 pt-4 safe-bottom">
         <div className="flex items-baseline justify-between gap-3 flex-wrap">
           <EchoHeadline className="text-[1.75rem] sm:text-[2.25rem]">{dayKey || "Session"}</EchoHeadline>
           {weekNumber > 0 && <div className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">Week {weekNumber}</div>}
