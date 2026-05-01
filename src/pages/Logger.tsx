@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
 import { loadHistory, prefillFromHistory } from "@/lib/lastPerformance";
 import { cn } from "@/lib/utils";
+import { AnimatePresence, motion, useMotionValue, useTransform, animate, type PanInfo } from "framer-motion";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -1096,6 +1097,14 @@ function ItemRow(props: {
           <MovementMeta item={item} />
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={props.onSwap}
+            className="p-1 text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss"
+            title="Swap movement"
+            aria-label="Swap movement"
+          >
+            <Replace className="h-3.5 w-3.5" />
+          </button>
           <RestEditor label="Rest" seconds={item.restBetweenSetsSeconds} onChange={props.onItemRest} onStart={() => onStartRest(item.restBetweenSetsSeconds, item.name)} compact />
           <Popover>
             <PopoverTrigger asChild>
@@ -1133,14 +1142,16 @@ function ItemRow(props: {
             </tr>
           </thead>
           <tbody>
-            {item.sets.map((s, i) => (
-              <SetRow key={i} idx={i} set={s} cols={cols}
-                onChange={(m, v) => props.onSetActual(i, m, v)}
-                onToggleComplete={() => props.onToggleComplete(i)}
-                onRemove={() => props.onRemoveSet(i)}
-                onStartRest={() => onStartRest(s.restAfterSeconds ?? item.restBetweenSetsSeconds, `${item.name} · set ${i + 1}`)}
-              />
-            ))}
+            <AnimatePresence initial={false}>
+              {item.sets.map((s, i) => (
+                <SetRow key={s.id ?? i} idx={i} set={s} cols={cols}
+                  onChange={(m, v) => props.onSetActual(i, m, v)}
+                  onToggleComplete={() => props.onToggleComplete(i)}
+                  onRemove={() => props.onRemoveSet(i)}
+                  onStartRest={() => onStartRest(s.restAfterSeconds ?? item.restBetweenSetsSeconds, `${item.name} · set ${i + 1}`)}
+                />
+              ))}
+            </AnimatePresence>
           </tbody>
         </table>
         {showGhostRow && (
