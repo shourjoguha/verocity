@@ -11,21 +11,21 @@ export function TopBar({ title }: { title?: string }) {
   const isHome = loc.pathname === "/" || loc.pathname === "/home";
 
   return (
-    <header className="sticky top-0 z-40 bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70 border-b hairline">
-      <div className="mx-auto max-w-3xl flex items-center justify-between px-4 h-12">
+    <header className="sticky top-0 z-40 bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70 border-b hairline safe-top">
+      <div className="mx-auto max-w-3xl flex items-center justify-between px-2 sm:px-4 h-12">
         <div className="flex items-center gap-1">
           <button
             aria-label="Back"
             onClick={() => nav(-1)}
             disabled={isHome}
-            className="p-2 transition-colors duration-slow ease-swiss disabled:opacity-30"
+            className="touch-target transition-colors duration-slow ease-swiss disabled:opacity-30"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
           <button
             aria-label="Home"
             onClick={() => nav("/")}
-            className="p-2 transition-colors duration-slow ease-swiss"
+            className="touch-target transition-colors duration-slow ease-swiss"
           >
             <HomeIcon className="h-4 w-4" />
           </button>
@@ -33,7 +33,7 @@ export function TopBar({ title }: { title?: string }) {
         <div className="font-display text-sm tracking-[-0.04em] uppercase">{title ?? "LIFTLOG"}</div>
         <Popover>
           <PopoverTrigger asChild>
-            <button className="text-[0.65rem] uppercase tracking-[0.12em] font-bold px-2 py-1 border hairline">
+            <button className="text-[0.65rem] uppercase tracking-[0.12em] font-bold px-3 min-h-[36px] border hairline">
               {user?.display_name ?? "—"}
             </button>
           </PopoverTrigger>

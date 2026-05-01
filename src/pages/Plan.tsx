@@ -158,7 +158,7 @@ export default function Plan() {
     return (
       <>
         <TopBar title="Plan" />
-        <main className="mx-auto max-w-3xl px-4 pb-24 pt-6">
+        <main className="mx-auto max-w-3xl px-4 pb-24 pt-6 safe-bottom">
           <EchoHeadline className="text-[2rem] sm:text-[2.5rem]">No plan</EchoHeadline>
           <p className="mt-3 text-sm text-muted-foreground">Upload a plan to see the overview.</p>
         </main>
@@ -169,7 +169,7 @@ export default function Plan() {
   return (
     <>
       <TopBar title="Plan" />
-      <main className="mx-auto max-w-5xl px-4 pb-24 pt-6">
+      <main className="mx-auto max-w-5xl px-4 pb-24 pt-6 safe-bottom">
         <div className="flex items-baseline justify-between gap-3 flex-wrap">
           <EchoHeadline className="text-[2.25rem] sm:text-[3rem]">{plan.title}</EchoHeadline>
           <button

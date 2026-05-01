@@ -148,6 +148,22 @@ export const appConfig = {
     "mobility": "Warm-up",
     "skill": "Secondary",
   } as Record<string, string>,
+
+  /** Touch / mobile-PWA tunables. Single source of truth — components read from here. */
+  touch: {
+    minTargetPx: 44,
+    inputMinFontPx: 16,
+    longPressMs: 450,
+    longPressMoveTolerancePx: 8,
+    swipe: {
+      revealPx: 96,
+      deleteThresholdPx: 160,
+      velocityDeletePxPerSec: 800,
+      hapticMs: 10,
+    },
+    hapticsEnabled: true,
+    safeArea: { top: true, bottom: true },
+  },
 } as const;
 
 export type Metric = (typeof appConfig.metrics.list)[number];

@@ -55,7 +55,7 @@ export default function Library() {
   return (
     <>
       <TopBar title="Library" />
-      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6">
+      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6 safe-bottom">
         <div className="flex items-baseline justify-between">
           <EchoHeadline className="text-[2.25rem]">Library</EchoHeadline>
           <button onClick={() => setAdding(true)} className="ll-btn flex items-center gap-1"><Plus className="h-3 w-3" /> Add custom</button>

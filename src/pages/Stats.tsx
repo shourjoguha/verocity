@@ -82,7 +82,7 @@ export default function Stats() {
   return (
     <>
       <TopBar title="Stats" />
-      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6">
+      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6 safe-bottom">
         <EchoHeadline className="text-[2.25rem]">Stats</EchoHeadline>
 
         <section className="mt-6 grid grid-cols-3 gap-2">

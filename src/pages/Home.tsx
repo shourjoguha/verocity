@@ -130,7 +130,7 @@ export default function Home() {
   return (
     <>
       <TopBar />
-      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6">
+      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6 safe-bottom">
         <EchoHeadline className="text-[2.5rem] sm:text-[3.5rem]">Today</EchoHeadline>
         <div className="mt-2 text-[0.7rem] uppercase tracking-[0.18em] text-muted-foreground">
           {today.toDateString()} · Week {week}
@@ -374,26 +374,24 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
     <div ref={containerRef} className="border-b hairline pb-3 relative">
       <div className="text-[0.6rem] uppercase tracking-[0.16em] text-muted-foreground mb-2">Plan progress</div>
       <div ref={scrollRef} className="-mx-4 px-4 overflow-x-auto edge-fade-x relative">
-        <div className="flex items-center gap-0.5 min-h-[28px] relative">
+        <div className="flex items-stretch gap-0.5 min-h-[44px] relative">
           {points.map((p, i) => {
-            const base = "w-1.5 h-6 shrink-0 cursor-pointer relative";
-            const style: React.CSSProperties = {};
-            let cls = base;
+            const barStyle: React.CSSProperties = {};
+            let barCls = "w-1.5 h-6 block";
             if (p.state === "done") {
-              style.backgroundColor = p.color;
+              barStyle.backgroundColor = p.color;
             } else if (p.state === "planned") {
-              style.borderColor = `color-mix(in srgb, ${p.color} 50%, transparent)`;
-              style.borderWidth = "1px";
-              style.borderStyle = "solid";
-              style.backgroundColor = "transparent";
+              barStyle.borderColor = `color-mix(in srgb, ${p.color} 50%, transparent)`;
+              barStyle.borderWidth = "1px";
+              barStyle.borderStyle = "solid";
+              barStyle.backgroundColor = "transparent";
             } else {
-              // blank (rest / off-plan / past unplanned) — diagonal hatch texture
-              style.backgroundImage = `repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.35) 0, hsl(var(--muted-foreground) / 0.35) 1px, transparent 1px, transparent 3px)`;
-              style.backgroundColor = "hsl(var(--muted) / 0.25)";
-              style.opacity = 0.55;
+              barStyle.backgroundImage = `repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.35) 0, hsl(var(--muted-foreground) / 0.35) 1px, transparent 1px, transparent 3px)`;
+              barStyle.backgroundColor = "hsl(var(--muted) / 0.25)";
+              barStyle.opacity = 0.55;
             }
             if (p.isToday) {
-              cls = cn(cls, "outline outline-1 outline-foreground outline-offset-1");
+              barCls = cn(barCls, "outline outline-1 outline-foreground outline-offset-1");
             }
             const isPeek = peekIndex === i;
             return (
@@ -403,11 +401,11 @@ function ProgressTimeline({ plan, logs }: { plan: PlanRow; logs: LogRow[] }) {
                 onClick={(e) => { e.stopPropagation(); setPeekIndex((cur) => (cur === i ? null : i)); }}
                 onMouseEnter={() => setPeekIndex(i)}
                 onMouseLeave={() => setPeekIndex((cur) => (cur === i ? null : cur))}
-                className={cls}
-                style={style}
+                className="shrink-0 relative h-11 flex items-center justify-center cursor-pointer"
                 aria-label={`${p.date} ${p.fullLabel}`}
                 title={`${p.fullLabel} · ${p.date}`}
               >
+                <span className={barCls} style={barStyle} aria-hidden />
                 {isPeek && (
                   <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 z-20 px-2 py-1 bg-foreground text-background text-[0.6rem] uppercase tracking-[0.12em] font-mono whitespace-nowrap pointer-events-none flex flex-col items-center gap-0.5">
                     <span>{p.fullLabel}</span>

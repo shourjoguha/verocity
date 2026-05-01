@@ -664,7 +664,7 @@ export default function Logger() {
   return (
     <>
       <TopBar title={dayKey || "Logger"} />
-      <main className="mx-auto max-w-3xl px-4 pb-32 pt-4">
+      <main className="mx-auto max-w-3xl px-4 pb-32 pt-4 safe-bottom">
         <div className="flex items-baseline justify-between gap-3 flex-wrap">
           <EchoHeadline className="text-[1.75rem] sm:text-[2.25rem]">{dayKey || "Session"}</EchoHeadline>
           {weekNumber > 0 && <div className="text-[0.65rem] uppercase tracking-[0.14em] text-muted-foreground">Week {weekNumber}</div>}
@@ -810,12 +810,14 @@ export default function Logger() {
 
       {/* Floating selection action bar */}
       {selected.size > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background border-2 border-foreground shadow-lg flex items-center gap-1 px-2 py-1 animate-fade-in">
-          <span className="px-2 text-[0.65rem] uppercase tracking-[0.14em]">{selected.size} selected</span>
-          <button onClick={() => groupSelected("superset")} className="px-3 py-2 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Group className="h-3 w-3" /> Superset</button>
-          <button onClick={() => groupSelected("circuit")} className="px-3 py-2 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Group className="h-3 w-3" /> Circuit</button>
-          <button onClick={ungroupSelected} className="px-3 py-2 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Ungroup className="h-3 w-3" /> Ungroup</button>
-          <button onClick={clearSelection} className="px-3 py-2 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80"><X className="h-3 w-3" /></button>
+        <div className="fixed left-1/2 -translate-x-1/2 z-50 animate-fade-in" style={{ bottom: `calc(1rem + env(safe-area-inset-bottom))` }}>
+          <div className="bg-foreground text-background border-2 border-foreground shadow-lg flex flex-wrap items-center justify-center gap-1 px-2 py-1 max-w-[calc(100vw-1rem)]">
+            <span className="px-2 text-[0.65rem] uppercase tracking-[0.14em]">{selected.size} selected</span>
+            <button onClick={() => groupSelected("superset")} className="touch-target-sm px-3 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Group className="h-3 w-3" /> Superset</button>
+            <button onClick={() => groupSelected("circuit")} className="touch-target-sm px-3 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Group className="h-3 w-3" /> Circuit</button>
+            <button onClick={ungroupSelected} className="touch-target-sm px-3 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Ungroup className="h-3 w-3" /> Ungroup</button>
+            <button onClick={clearSelection} aria-label="Clear" className="touch-target-sm px-3 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80"><X className="h-3 w-3" /></button>
+          </div>
         </div>
       )}
 
@@ -941,10 +943,10 @@ function SectionTitle({ name, editable, onRename, onRemove }: { name: string; ed
     );
   }
   return (
-    <div className="flex items-center gap-1 group" onClick={(e) => e.stopPropagation()}>
+    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
       <span className="font-display text-xl uppercase tracking-[-0.04em]">{name}</span>
-      <button onClick={() => setEditing(true)} className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-opacity"><Pencil className="h-3 w-3" /></button>
-      <button onClick={onRemove} className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-opacity"><Trash2 className="h-3 w-3" /></button>
+      <button onClick={() => setEditing(true)} aria-label="Rename section" className="touch-target-sm text-muted-foreground/60 hover:text-foreground transition-colors"><Pencil className="h-3 w-3" /></button>
+      <button onClick={onRemove} aria-label="Remove section" className="touch-target-sm text-muted-foreground/60 hover:text-foreground transition-colors"><Trash2 className="h-3 w-3" /></button>
     </div>
   );
 }
@@ -1099,7 +1101,7 @@ function ItemRow(props: {
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={props.onSwap}
-            className="p-1 text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss"
+            className="touch-target text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss"
             title="Swap movement"
             aria-label="Swap movement"
           >
@@ -1108,7 +1110,7 @@ function ItemRow(props: {
           <RestEditor label="Rest" seconds={item.restBetweenSetsSeconds} onChange={props.onItemRest} onStart={() => onStartRest(item.restBetweenSetsSeconds, item.name)} compact />
           <Popover>
             <PopoverTrigger asChild>
-              <button className="p-1 text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss" title="Options"><Settings2 className="h-3.5 w-3.5" /></button>
+              <button className="touch-target text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss" title="Options" aria-label="Options"><Settings2 className="h-3.5 w-3.5" /></button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-52 p-1">
               <button onClick={props.onSwap} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Replace className="h-3 w-3" /> Swap</button>
@@ -1172,15 +1174,19 @@ function ItemCompleteCheckbox({ allComplete, noneComplete, onClick }: { allCompl
   return (
     <button
       onClick={onClick}
-      className={cn(
-        "h-5 w-5 border flex items-center justify-center transition-colors",
-        allComplete ? "bg-foreground border-foreground text-background" : "hairline hover:bg-secondary",
-      )}
+      className="touch-target relative"
       title={allComplete ? "Mark all incomplete" : "Mark all complete"}
       aria-label="Toggle all sets complete"
     >
-      {allComplete && <span className="text-[0.7rem] leading-none">✓</span>}
-      {indeterminate && <span className="block h-0.5 w-2.5 bg-foreground" />}
+      <span
+        className={cn(
+          "h-5 w-5 border flex items-center justify-center transition-colors",
+          allComplete ? "bg-foreground border-foreground text-background" : "hairline",
+        )}
+      >
+        {allComplete && <span className="text-[0.7rem] leading-none">✓</span>}
+        {indeterminate && <span className="block h-0.5 w-2.5 bg-foreground" />}
+      </span>
     </button>
   );
 }
@@ -1252,7 +1258,9 @@ function StepperInput(props: {
   const { value, step, placeholder, prefilled, onChange } = props;
   const [hover, setHover] = useState(false);
   const [focused, setFocused] = useState(false);
-  const show = hover || focused;
+  // On touch devices there is no hover; keep the steppers visible so they're reachable.
+  const isTouch = typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches;
+  const show = hover || focused || isTouch;
   const decimals = step < 1 ? 1 : 0;
   const adjust = useCallback((dir: 1 | -1) => {
     const cur = value ?? 0;
@@ -1282,6 +1290,7 @@ function StepperInput(props: {
       <input
         type="number"
         inputMode="decimal"
+        pattern="[0-9]*\.?[0-9]*"
         step={step}
         value={value ?? ""}
         onFocus={() => setFocused(true)}
@@ -1291,20 +1300,20 @@ function StepperInput(props: {
           onChange(v === "" ? null : Number(v));
         }}
         className={cn(
-          "w-16 text-right bg-transparent border-b hairline focus:border-foreground focus:outline-none transition-colors duration-slow ease-swiss font-mono pr-4",
+          "w-16 text-right bg-transparent border-b hairline focus:border-foreground focus:outline-none transition-colors duration-slow ease-swiss font-mono pr-5 no-zoom-input py-1",
           prefilled && "italic text-muted-foreground",
         )}
         placeholder={placeholder}
       />
       {show && (
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex flex-col">
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex flex-col gap-0.5">
           <button
             type="button"
             onMouseDown={(e) => { e.preventDefault(); startRepeat(1); }}
             onMouseUp={stopRepeat} onMouseLeave={stopRepeat}
             onTouchStart={(e) => { e.preventDefault(); startRepeat(1); }}
             onTouchEnd={stopRepeat}
-            className="h-3 w-3 flex items-center justify-center text-muted-foreground hover:text-foreground"
+            className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground"
             tabIndex={-1}
             aria-label="Increase"
           >
@@ -1316,7 +1325,7 @@ function StepperInput(props: {
             onMouseUp={stopRepeat} onMouseLeave={stopRepeat}
             onTouchStart={(e) => { e.preventDefault(); startRepeat(-1); }}
             onTouchEnd={stopRepeat}
-            className="h-3 w-3 flex items-center justify-center text-muted-foreground hover:text-foreground"
+            className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground"
             tabIndex={-1}
             aria-label="Decrease"
           >
@@ -1338,9 +1347,11 @@ function SetRow(props: {
   onStartRest: () => void;
 }) {
   const { idx, set, cols } = props;
-  const REVEAL = 88;
+  const REVEAL = appConfig.touch.swipe.revealPx;
   const REVEAL_SNAP = REVEAL / 2;
-  const DELETE_THRESHOLD = REVEAL * 1.8;
+  const DELETE_THRESHOLD = appConfig.touch.swipe.deleteThresholdPx;
+  const VELOCITY_DELETE = appConfig.touch.swipe.velocityDeletePxPerSec;
+  const HAPTIC_MS = appConfig.touch.swipe.hapticMs;
   const x = useMotionValue(0);
   const actionOpacity = useTransform(x, [-REVEAL, -REVEAL_SNAP, 0], [1, 0.6, 0]);
   const labelOpacity = useTransform(x, [-REVEAL, -REVEAL * 0.85], [1, 0]);
@@ -1349,12 +1360,14 @@ function SetRow(props: {
   function onDragEnd(_: PointerEvent | MouseEvent | TouchEvent, info: PanInfo) {
     const ox = info.offset.x;
     const vx = info.velocity.x;
-    if (ox <= -DELETE_THRESHOLD || vx < -800) {
+    if (ox <= -DELETE_THRESHOLD || vx < -VELOCITY_DELETE) {
+      if (appConfig.touch.hapticsEnabled) try { navigator.vibrate?.(HAPTIC_MS); } catch { /* noop */ }
       animate(x, -600, { duration: 0.18, ease: [0.4, 0, 0.2, 1] });
       props.onRemove();
       return;
     }
     if (ox <= -REVEAL_SNAP) {
+      if (appConfig.touch.hapticsEnabled) try { navigator.vibrate?.(HAPTIC_MS); } catch { /* noop */ }
       animate(x, -REVEAL, spring);
     } else {
       animate(x, 0, spring);
@@ -1371,7 +1384,7 @@ function SetRow(props: {
       layout
       initial={false}
       exit={{ opacity: 0, x: -400, transition: { duration: 0.22, ease: [0.4, 0, 0.2, 1] } }}
-      className={cn("relative", set.actual.completed && "opacity-60")}
+      className={cn("relative swipe-row", set.actual.completed && "opacity-60")}
       style={{ x }}
       drag="x"
       dragConstraints={{ left: -REVEAL, right: 0 }}
@@ -1406,9 +1419,11 @@ function SetRow(props: {
       <td className="text-right relative">
         <button
           onClick={props.onToggleComplete}
-          className={`h-4 w-4 border ${set.actual.completed ? "bg-foreground border-foreground" : "hairline"}`}
+          className="touch-target-sm"
           aria-label="Toggle complete"
-        />
+        >
+          <span className={cn("h-4 w-4 border block", set.actual.completed ? "bg-foreground border-foreground" : "hairline")} />
+        </button>
         <motion.div
           className="absolute top-0 left-full h-full flex items-center justify-center pointer-events-none"
           style={{ width: REVEAL, backgroundColor: "hsl(0 65% 42%)", opacity: actionOpacity }}
