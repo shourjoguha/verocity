@@ -1463,6 +1463,7 @@ function SetRow(props: {
               step={step}
               prefilled={set.actual.prefilled}
               placeholder={m === "weight" ? "0" : "—"}
+              clamp={m === "rpe" ? { min: appConfig.rpe.min, max: appConfig.rpe.max } : { min: 0 }}
               onChange={(v) => props.onChange(m, v)}
             />
           </td>
