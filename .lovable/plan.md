@@ -1,100 +1,88 @@
-## Home/Logger/Stats refinements
+## Logger: Framer Motion swipe-to-delete + visible Swap icon
 
-Four independent changes across `Home.tsx`, `logBuilder.ts`, `Stats.tsx` and a new dialog component.
+Two scoped UI changes inside `src/pages/Logger.tsx`. One new dependency.
 
 ---
 
-### 1. Section-based default rest
+### 1. Rebuild swipe-to-delete with Framer Motion
 
-Today every set defaults to `appConfig.timer.defaults.betweenSetsSeconds` (90s). We'll drive it off the section name.
+Today `SetRow` uses a hand-rolled pointer-event/translateX state machine (`idle | revealed | frictionLocked`) with rubber-band math. The user reports it feels sticky. We'll replace it with a Framer Motion `motion.tr` driven by `drag="x"`, which gives native-feeling momentum, elastic over-drag, and snap animations for free.
 
-**Changes**
-- `src/config/app.config.ts` — extend `timer.defaults` with a new `bySection` map:
+**Dependency**
+- Add `framer-motion` (`bun add framer-motion`).
+
+**`SetRow` rewrite (`src/pages/Logger.tsx`, lines ~1320–1458)**
+- Replace `<tr>` with `motion.tr`.
+- Use a single `useMotionValue` `x`, no `phase` state, no manual pointer handlers, no friction timer.
+- Drag config:
   ```ts
-  bySection: { "Main": 120, "Secondary": 90, "Warm-up": 30, "Finisher": 60 }
+  drag="x"
+  dragConstraints={{ left: -REVEAL, right: 0 }}  // REVEAL = 88
+  dragElastic={{ left: 0.35, right: 0 }}         // elastic past reveal, no right pull
+  dragMomentum={false}
   ```
-- `src/lib/logBuilder.ts` — in `buildLogDocument`, look up rest by resolved `sectionKey` (fallback to `betweenSetsSeconds`). Pass that value into `plannedToLogSets`, `restBetweenSetsSeconds`, and `restAfterRoundSeconds`.
-- Library `default_rest_seconds` (per-movement) still wins when the user swaps/adds a movement via the picker — that path already overrides via `mov.default_rest_seconds`. Section default is only the initial seed for plan-built logs.
+- `onDragEnd((_, info) => { ... })` decides the snap based on `info.offset.x`:
+  - `offset.x <= -DELETE_THRESHOLD` (-REVEAL * 1.8 ≈ -160) **or** `info.velocity.x < -800` → call `props.onRemove()`. Parent's removal triggers React unmount; the row's `exit` animation handles the slide-up.
+  - Else if `offset.x <= -REVEAL_SNAP` (-REVEAL/2 = -44) → `animate(x, -REVEAL, { type: "spring", stiffness: 500, damping: 40 })` (revealed).
+  - Else → `animate(x, 0, { type: "spring", stiffness: 500, damping: 40 })` (snap closed).
+- "Halfway shows the button": the red action panel is always rendered behind the row (absolute, width = REVEAL, right-aligned). Its visibility is driven by `useTransform(x, [-REVEAL/2, -REVEAL], [0, 1])` opacity, so the Delete button fades in at 50% pull and is fully visible at full reveal. The button stays clickable once `x <= -REVEAL/2`.
+- Delete button content: red background + `Trash2` icon + "Delete" label (text only visible at full reveal via the same opacity transform). Clicking it calls `props.onRemove()`.
+- Tap-outside / new drag past 0 closes (handled automatically by snap-to-0 logic).
 
-Note: user asked for Main 2:00 and Secondary 1:30 — using 120 / 90.
-
----
-
-### 2. Hover/click peek label on progress bars
-
-`ProgressTimeline` already has a click-to-peek popover (`peekIndex`) showing the abbreviated label and date. The user wants the **full** session name (e.g. "Upper A", "Lower A") and it should also appear on hover.
-
-**Changes** (`src/pages/Home.tsx`, ~lines 285–399)
-- In `buildTimeline`, store a `fullLabel` field on each `TimelinePoint`:
-  - For done logs: parse `log.day_key` → use the part after `—` (the type), unabbreviated.
-  - For planned days: use `planDay.type` directly.
-  - For blanks: "Rest".
-- In the bar `<button>`, add `onMouseEnter`/`onMouseLeave` handlers that set `peekIndex` (in addition to the existing click toggle). Add `title={p.fullLabel}` as a fallback.
-- Replace the `{p.label}` line in the peek popover with `{p.fullLabel}` so it reads "Upper A" instead of "UprA".
-
----
-
-### 3. Move Stats summary onto Home; sharper 1RM
-
-**On Home (`src/pages/Home.tsx`)**
-- Below the Recent section (and above the quick-actions grid), add a new `<section>` titled "Stats".
-- Compute inline from `allLogs` (already loaded):
-  - Sessions count
-  - Total time (sum `total_seconds`)
-  - All-time best e1RM per movement (top 5 by recency)
-- Remove the **Stats** card from the quick-actions grid (the `nav("/stats")` button at lines 209–212).
-
-**1RM formula change (`src/pages/Stats.tsx` and Home)**
-- Replace Epley with **Brzycki** for stronger high-rep estimates and apply it to **all-time max** per movement, not last entry:
+**Slide-up of remaining items on delete**
+- Wrap `<tbody>`'s `item.sets.map(...)` in `<AnimatePresence initial={false}>`.
+- The `motion.tr` gets `layout`, `initial={false}`, and:
   ```ts
-  // Brzycki: weight * 36 / (37 - reps), valid for reps < 37
-  function brzycki(w: number, r: number) {
-    return r >= 37 ? w * (1 + r / 30) : (w * 36) / (37 - r);
-  }
+  exit={{ height: 0, opacity: 0, x: -400, transition: { duration: 0.22, ease: [0.4, 0, 0.2, 1] } }}
   ```
-  Brzycki yields ~5–8% higher estimates than Epley at moderate reps (8–12), matching the "more aggressive" ask.
-- Per-movement 1RM = `max(brzycki(weight, reps))` across **every** completed set in `workout_logs`, not just the latest.
-- Update `Stats.tsx` to use `brzycki` and label the column "1RM (Brzycki)".
+- `layout` on each row makes the rows below smoothly slide up to fill the gap (Framer's shared-layout transition).
+- Note: animating `<tr>` height inside a `<table>` works in modern browsers; if visual jitter shows up, we'll wrap each row in a `motion.div` inside a single-cell layout — but `<tr>` first since it's a smaller change.
+
+**Remove dead code**
+- Delete the `phase`, `frictionTimer`, `REVEAL_THRESHOLD`, `FRICTION_MS`, `animatingRef`, `closeSwipe`, and the manual `onPointerDown/Move/Up` handlers. Constants reduce to `REVEAL`, `REVEAL_SNAP`, `DELETE_THRESHOLD`.
 
 ---
 
-### 4. Combine Blank workout + Activity into a single "Log" card
+### 2. Surface the Swap icon on the movement card
 
-`AddSessionMenu` already implements the exact two-step picker (Plan/Activity → details). We'll reuse it.
+Today swap is buried inside the `Settings2` popover (line 1105). The user wants the Swap action visible directly on the card, to the **left of the rest timer**.
 
-**Changes (`src/pages/Home.tsx`)**
-- Add state `const [logMenuOpen, setLogMenuOpen] = useState(false);`.
-- In the quick-actions grid, **remove** the "Blank workout" and "Activity" buttons. Replace with a single `Log` card:
+**Change (`src/pages/Logger.tsx`, lines ~1098–1113, the right-side action cluster of the movement header)**
+
+Current order (right side of the card):
+```
+[Rest timer]  [Settings2 ⚙]  [☐ complete]
+```
+
+New order:
+```
+[⇄ Swap]  [Rest timer]  [Settings2 ⚙]  [☐ complete]
+```
+
+- Insert a new icon button just before `<RestEditor>`:
   ```tsx
-  <button onClick={() => setLogMenuOpen(true)} className="border hairline p-4 ...">
-    <div className="text-[0.6rem] uppercase ...">New</div>
-    <div className="font-display text-lg mt-1">Log</div>
+  <button
+    onClick={props.onSwap}
+    className="p-1 text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss"
+    title="Swap movement"
+    aria-label="Swap movement"
+  >
+    <Replace className="h-3.5 w-3.5" />
   </button>
   ```
-- **Move** the quick-actions grid so it renders **above** the Recent section (currently below). Resize: change container to a tighter `grid-cols-3 sm:grid-cols-5 gap-2` so cards are smaller, since one slot was removed.
-- Render `<AddSessionMenu open={logMenuOpen} onClose={() => setLogMenuOpen(false)} date={ymd(today)} />`.
+- Reuse the existing `Replace` lucide icon (already imported, used in the popover).
+- Keep the popover's "Swap" entry as-is — it stays as a redundant access point so muscle memory isn't broken, and it groups with other movement actions.
 
-Final Home order:
-```
-Today headline
-Plan progress timeline
-Pick a day / DayRail
-Quick actions (Log, Plan, Calendar, Movements, Upload)   ← moved up, resized
-Recent
-Stats summary                                             ← new
-```
+`onSwap` already exists on `MovementCard` props (line 1044) and triggers the `LibraryPicker` flow — no wiring changes required.
 
 ---
 
 ### Files touched
 
 ```
-src/config/app.config.ts        — add timer.defaults.bySection
-src/lib/logBuilder.ts           — section-based rest seeding
-src/pages/Home.tsx              — peek fullLabel + hover, combined Log card,
-                                  reorder sections, inline Stats summary,
-                                  remove Stats quick-action
-src/pages/Stats.tsx             — Brzycki formula, all-time max 1RM
+package.json             — add framer-motion
+src/pages/Logger.tsx     — SetRow rewrite (Framer drag + AnimatePresence + layout),
+                            add Swap icon button left of RestEditor in MovementCard header
 ```
 
-No DB, schema, or routing changes.
+No DB, schema, routing, or other component changes. No changes to the swipe behavior in any other list (Plan view, Home, etc.) — scoped to the in-workout movement set rows as requested.
