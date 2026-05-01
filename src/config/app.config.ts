@@ -75,6 +75,7 @@ export const appConfig = {
 
   rpe: {
     min: 1, max: 10,
+    default: 7,
     descriptions: {
       6: "Easy, 4 reps in reserve",
       7: "Moderate, 3 reps in reserve",
