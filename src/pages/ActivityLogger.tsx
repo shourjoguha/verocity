@@ -64,7 +64,7 @@ export default function ActivityLogger() {
   return (
     <>
       <TopBar title="Activity" />
-      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6">
+      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6 safe-bottom">
         <EchoHeadline className="text-[2.25rem] sm:text-[3rem]">Log activity</EchoHeadline>
         <p className="mt-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
           Sport · class · recovery · mobility

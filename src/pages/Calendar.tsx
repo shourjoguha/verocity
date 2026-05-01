@@ -70,7 +70,7 @@ export default function Calendar() {
   return (
     <>
       <TopBar title="Calendar" />
-      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6">
+      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6 safe-bottom">
         <div className="flex items-baseline justify-between">
           <EchoHeadline className="text-[2rem] sm:text-[2.5rem]">{monthLabel}</EchoHeadline>
           <div className="flex items-center gap-1">

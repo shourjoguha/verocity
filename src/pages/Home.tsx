@@ -130,7 +130,7 @@ export default function Home() {
   return (
     <>
       <TopBar />
-      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6">
+      <main className="mx-auto max-w-3xl px-4 pb-24 pt-6 safe-bottom">
         <EchoHeadline className="text-[2.5rem] sm:text-[3.5rem]">Today</EchoHeadline>
         <div className="mt-2 text-[0.7rem] uppercase tracking-[0.18em] text-muted-foreground">
           {today.toDateString()} · Week {week}
