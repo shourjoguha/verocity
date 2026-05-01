@@ -341,7 +341,9 @@ export default function Logger() {
       const g = s.groups.find((x) => x.id === groupId)!;
       const it = g.items[itemIdx];
       const last = it.sets[it.sets.length - 1];
-      it.sets.push({ planned: last?.planned ?? null, actual: {}, notations: last?.notations ?? [], restAfterSeconds: it.restBetweenSetsSeconds });
+      const seedActual: LogSet["actual"] = {};
+      if (it.metrics.includes("rpe")) { seedActual.rpe = appConfig.rpe.default; seedActual.prefilled = true; }
+      it.sets.push({ planned: last?.planned ?? null, actual: seedActual, notations: last?.notations ?? [], restAfterSeconds: it.restBetweenSetsSeconds });
     });
   }
   function removeSet(sectionId: string, groupId: string, itemIdx: number, setIdx: number) {
