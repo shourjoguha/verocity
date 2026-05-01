@@ -1252,7 +1252,9 @@ function StepperInput(props: {
   const { value, step, placeholder, prefilled, onChange } = props;
   const [hover, setHover] = useState(false);
   const [focused, setFocused] = useState(false);
-  const show = hover || focused;
+  // On touch devices there is no hover; keep the steppers visible so they're reachable.
+  const isTouch = typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches;
+  const show = hover || focused || isTouch;
   const decimals = step < 1 ? 1 : 0;
   const adjust = useCallback((dir: 1 | -1) => {
     const cur = value ?? 0;
@@ -1282,6 +1284,7 @@ function StepperInput(props: {
       <input
         type="number"
         inputMode="decimal"
+        pattern="[0-9]*\.?[0-9]*"
         step={step}
         value={value ?? ""}
         onFocus={() => setFocused(true)}
@@ -1291,20 +1294,20 @@ function StepperInput(props: {
           onChange(v === "" ? null : Number(v));
         }}
         className={cn(
-          "w-16 text-right bg-transparent border-b hairline focus:border-foreground focus:outline-none transition-colors duration-slow ease-swiss font-mono pr-4",
+          "w-16 text-right bg-transparent border-b hairline focus:border-foreground focus:outline-none transition-colors duration-slow ease-swiss font-mono pr-5 no-zoom-input py-1",
           prefilled && "italic text-muted-foreground",
         )}
         placeholder={placeholder}
       />
       {show && (
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex flex-col">
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex flex-col gap-0.5">
           <button
             type="button"
             onMouseDown={(e) => { e.preventDefault(); startRepeat(1); }}
             onMouseUp={stopRepeat} onMouseLeave={stopRepeat}
             onTouchStart={(e) => { e.preventDefault(); startRepeat(1); }}
             onTouchEnd={stopRepeat}
-            className="h-3 w-3 flex items-center justify-center text-muted-foreground hover:text-foreground"
+            className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground"
             tabIndex={-1}
             aria-label="Increase"
           >
@@ -1316,7 +1319,7 @@ function StepperInput(props: {
             onMouseUp={stopRepeat} onMouseLeave={stopRepeat}
             onTouchStart={(e) => { e.preventDefault(); startRepeat(-1); }}
             onTouchEnd={stopRepeat}
-            className="h-3 w-3 flex items-center justify-center text-muted-foreground hover:text-foreground"
+            className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-foreground active:text-foreground"
             tabIndex={-1}
             aria-label="Decrease"
           >
