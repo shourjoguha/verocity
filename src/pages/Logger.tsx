@@ -1172,15 +1172,19 @@ function ItemCompleteCheckbox({ allComplete, noneComplete, onClick }: { allCompl
   return (
     <button
       onClick={onClick}
-      className={cn(
-        "h-5 w-5 border flex items-center justify-center transition-colors",
-        allComplete ? "bg-foreground border-foreground text-background" : "hairline hover:bg-secondary",
-      )}
+      className="touch-target relative"
       title={allComplete ? "Mark all incomplete" : "Mark all complete"}
       aria-label="Toggle all sets complete"
     >
-      {allComplete && <span className="text-[0.7rem] leading-none">✓</span>}
-      {indeterminate && <span className="block h-0.5 w-2.5 bg-foreground" />}
+      <span
+        className={cn(
+          "h-5 w-5 border flex items-center justify-center transition-colors",
+          allComplete ? "bg-foreground border-foreground text-background" : "hairline",
+        )}
+      >
+        {allComplete && <span className="text-[0.7rem] leading-none">✓</span>}
+        {indeterminate && <span className="block h-0.5 w-2.5 bg-foreground" />}
+      </span>
     </button>
   );
 }
