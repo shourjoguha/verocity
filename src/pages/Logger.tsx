@@ -1304,7 +1304,9 @@ function StepperInput(props: {
     pointerIdRef.current = e.pointerId;
     startYRef.current = e.clientY;
     refYRef.current = e.clientY;
-    startValueRef.current = value ?? 0;
+    // When empty, seed from a sensible in-range value so clamps don't strand the scrub.
+    const seed = value ?? (Number.isFinite(min) ? min : 0);
+    startValueRef.current = Math.min(max, Math.max(min, seed));
     accStepsRef.current = 0;
     engagedRef.current = false;
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
