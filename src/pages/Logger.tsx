@@ -1338,87 +1338,46 @@ function SetRow(props: {
   onStartRest: () => void;
 }) {
   const { idx, set, cols } = props;
-  // Elastic swipe-to-delete: idle → revealed (with 500ms friction lock) → delete on continued drag.
-  const REVEAL = 72;
-  const REVEAL_THRESHOLD = 40;
-  const DELETE_THRESHOLD = 140;
-  const FRICTION_MS = 500;
-  const [dx, setDx] = useState(0);
-  const [phase, setPhase] = useState<"idle" | "revealed" | "frictionLocked">("idle");
-  const startX = useRef<number | null>(null);
-  const animatingRef = useRef(true);
-  const frictionTimer = useRef<number | null>(null);
+  const REVEAL = 88;
+  const REVEAL_SNAP = REVEAL / 2;
+  const DELETE_THRESHOLD = REVEAL * 1.8;
+  const x = useMotionValue(0);
+  const actionOpacity = useTransform(x, [-REVEAL, -REVEAL_SNAP, 0], [1, 0.6, 0]);
+  const labelOpacity = useTransform(x, [-REVEAL, -REVEAL * 0.85], [1, 0]);
+  const spring = { type: "spring" as const, stiffness: 500, damping: 40 };
 
-  useEffect(() => () => { if (frictionTimer.current) window.clearTimeout(frictionTimer.current); }, []);
-
-  function onPointerDown(e: React.PointerEvent<HTMLTableRowElement>) {
-    const target = e.target as HTMLElement;
-    if (target.closest("input,button")) return;
-    startX.current = e.clientX;
-    animatingRef.current = false;
-    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* noop */ }
-  }
-  function onPointerMove(e: React.PointerEvent<HTMLTableRowElement>) {
-    if (startX.current == null) return;
-    if (phase === "frictionLocked") return; // ignore movement during settle
-    const delta = e.clientX - startX.current;
-    const base = phase === "revealed" ? -REVEAL : 0;
-    let next = base + delta;
-    if (next > 0) next = 0;
-    // Rubber-band past REVEAL when swiping further left
-    if (next < -REVEAL) {
-      const overshoot = -REVEAL - next;
-      next = -REVEAL - overshoot * 0.45;
-    }
-    setDx(next);
-  }
-  function onPointerUp(e: React.PointerEvent<HTMLTableRowElement>) {
-    if (startX.current == null) return;
-    const delta = e.clientX - startX.current;
-    startX.current = null;
-    animatingRef.current = true;
-    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ }
-
-    // Past delete threshold from any state → delete
-    if (dx <= -DELETE_THRESHOLD) {
+  function onDragEnd(_: PointerEvent | MouseEvent | TouchEvent, info: PanInfo) {
+    const ox = info.offset.x;
+    const vx = info.velocity.x;
+    if (ox <= -DELETE_THRESHOLD || vx < -800) {
+      animate(x, -600, { duration: 0.18, ease: [0.4, 0, 0.2, 1] });
       props.onRemove();
       return;
     }
-
-    if (phase === "revealed") {
-      // Right-swipe to dismiss
-      if (delta > REVEAL_THRESHOLD) {
-        setPhase("idle");
-        setDx(0);
-      } else {
-        setDx(-REVEAL);
-      }
+    if (ox <= -REVEAL_SNAP) {
+      animate(x, -REVEAL, spring);
     } else {
-      if (delta < -REVEAL_THRESHOLD) {
-        setPhase("revealed");
-        setDx(-REVEAL);
-        // Friction window: ignore further drags briefly so the bounce settles.
-        setPhase("frictionLocked");
-        if (frictionTimer.current) window.clearTimeout(frictionTimer.current);
-        frictionTimer.current = window.setTimeout(() => {
-          setPhase("revealed");
-          frictionTimer.current = null;
-        }, FRICTION_MS);
-      } else {
-        setDx(0);
-      }
+      animate(x, 0, spring);
     }
   }
-  function closeSwipe() { setPhase("idle"); setDx(0); animatingRef.current = true; }
+
+  function deleteFromButton() {
+    animate(x, -600, { duration: 0.18, ease: [0.4, 0, 0.2, 1] });
+    props.onRemove();
+  }
 
   return (
-    <tr
+    <motion.tr
+      layout
+      initial={false}
+      exit={{ opacity: 0, x: -400, transition: { duration: 0.22, ease: [0.4, 0, 0.2, 1] } }}
       className={cn("relative", set.actual.completed && "opacity-60")}
-      style={{ transform: `translateX(${dx}px)`, transition: animatingRef.current ? "transform 280ms cubic-bezier(0.34,1.56,0.64,1)" : undefined }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      style={{ x }}
+      drag="x"
+      dragConstraints={{ left: -REVEAL, right: 0 }}
+      dragElastic={{ left: 0.4, right: 0 }}
+      dragMomentum={false}
+      onDragEnd={onDragEnd}
     >
       <td className="font-mono text-xs">{idx + 1}</td>
       {cols.map((m) => {
@@ -1450,21 +1409,27 @@ function SetRow(props: {
           className={`h-4 w-4 border ${set.actual.completed ? "bg-foreground border-foreground" : "hairline"}`}
           aria-label="Toggle complete"
         />
-        <div
-          aria-hidden={phase !== "revealed"}
-          className="absolute top-0 left-full h-full flex items-center justify-center"
-          style={{ width: REVEAL, backgroundColor: "hsl(0 50% 27%)" }}
+        <motion.div
+          className="absolute top-0 left-full h-full flex items-center justify-center pointer-events-none"
+          style={{ width: REVEAL, backgroundColor: "hsl(0 65% 42%)", opacity: actionOpacity }}
         >
           <button
-            onClick={(e) => { e.stopPropagation(); props.onRemove(); closeSwipe(); }}
-            className="text-background h-full w-full flex items-center justify-center hover:bg-black/10 transition-colors"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); deleteFromButton(); }}
+            className="text-background h-full w-full flex items-center justify-center gap-1.5 pointer-events-auto hover:bg-black/10 transition-colors"
             aria-label="Delete set"
           >
-            <X className="h-5 w-5" />
+            <Trash2 className="h-4 w-4" />
+            <motion.span
+              style={{ opacity: labelOpacity }}
+              className="text-[0.65rem] uppercase tracking-[0.12em] font-bold"
+            >
+              Delete
+            </motion.span>
           </button>
-        </div>
+        </motion.div>
       </td>
-    </tr>
+    </motion.tr>
   );
 }
 
