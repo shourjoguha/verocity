@@ -1144,7 +1144,7 @@ function ItemRow(props: {
           <tbody>
             <AnimatePresence initial={false}>
               {item.sets.map((s, i) => (
-                <SetRow key={s.id ?? i} idx={i} set={s} cols={cols}
+                <SetRow key={i} idx={i} set={s} cols={cols}
                   onChange={(m, v) => props.onSetActual(i, m, v)}
                   onToggleComplete={() => props.onToggleComplete(i)}
                   onRemove={() => props.onRemoveSet(i)}
