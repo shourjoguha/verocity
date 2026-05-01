@@ -1,95 +1,81 @@
-
 ## Goal
 
-Make the app feel native on touch devices (phones in PWA mode) by fixing tap targets, gesture conflicts, scroll/zoom quirks, and adding a single config-driven touch system used everywhere.
+Replace the cluttered up/down chevron buttons on numeric inputs (weight, reps, RPE, distance, time) inside movement cards with a **touch-to-scrub** interaction: tap-and-hold the number, it gently magnifies, then drag vertically to change the value with low sensitivity. Keyboard input still works on tap (no drag).
 
-## Current pain points (verified)
+All tunables added to `appConfig.touch.scrub` so behavior is config-driven.
 
-1. **Tap targets too small.** Many controls are `h-3 w-3` / `p-1` / `px-1.5 py-0.5` (chevrons, Replace, Settings2, complete checkbox `h-4 w-4`, rest "go" button, set checkbox, +/- chevrons in StepperInput). Apple/Android guideline = 44px / 48dp. On 393px viewport these are very hard to hit.
-2. **Gesture conflicts.** `SetRow` uses Framer Motion `drag="x"` while sitting inside horizontally scrolling tables (`overflow-x-auto`) and inside a vertically scrolling page. No `touchAction` constraint → swipe sometimes scrolls the table or page instead of revealing delete. Same for the timeline scroller and metrics row.
-3. **iOS quirks.** Missing `viewport-fit=cover` is set, but app uses no safe-area padding (notch / home indicator overlap the floating selection bar at `bottom-4` and the TopBar). No `-webkit-tap-highlight-color`. No `user-select: none` on chrome → long-press selects text.
-4. **Native zoom on inputs.** `StepperInput` uses `text-xs` (~12px) → iOS Safari auto-zooms on focus. Same for the rest seconds input.
-5. **300ms / double-tap zoom.** No `touch-action: manipulation` on buttons.
-6. **Long-press hook** uses `onTouchStart` without preventing native context-menu / text-selection callouts; no movement cancellation (any small finger drift still fires long-press).
-7. **Hover-only affordances.** Section title edit/remove buttons use `opacity-0 group-hover:opacity-100` → invisible & unusable on touch.
-8. **Popovers / Sheets** open at desktop widths; some content (rest editor, Settings2 menu) clips on 360–393px screens.
-9. **No PWA manifest** so "Add to Home Screen" install is half-broken; status bar color, standalone display, and safe-area behavior aren't declared.
+## Interaction spec
 
-## Solution — config driven
+- **Tap (no drag)** → focuses the input as today; on-screen numeric keypad opens. Value can be typed normally.
+- **Press & hold (>120ms)** OR **drag immediately on press** → enters *scrub mode*:
+  - The number visually scales to ~1.25×, gains a subtle ring, and the input loses focus (so the keyboard does not appear).
+  - Vertical drag changes the value. **Up = increase, Down = decrease.**
+  - **Sensitivity: 1 step per ~12px of vertical movement** (configurable). So a 36px drag = 3 steps. Slight wobbles (<12px) do nothing.
+  - Step size matches today's logic: `0.5` for weight & RPE, `1` for reps/distance/time.
+  - Horizontal movement is ignored. Movement past the configured deadzone (4px) commits to scrub mode and prevents page scroll (`touch-action: none` while scrubbing).
+  - Light haptic tick (`navigator.vibrate(5)`) on every step change when `appConfig.touch.hapticsEnabled`.
+  - RPE clamps to `[appConfig.rpe.min, appConfig.rpe.max]` (1–10). Weight/reps/distance/time clamp to `>= 0`.
+- **Release** → exit scrub mode: number scales back, no keyboard opens, value persists. The chevron up/down buttons are removed entirely.
+- **Mouse** (desktop): same drag-to-scrub works with mouse; double-click to focus the input for typing. Wheel is intentionally not bound (avoids accidental edits while scrolling the page).
 
-### 1. Extend `src/config/app.config.ts` with a `touch` block
+## Visual
+
+```text
+   normal                      scrubbing
+   ┌─────┐                     ┌─────────┐
+   │ 7.5 │                     │   7.5   │   ← scale 1.25, ring-1 ring-foreground/40
+   └─────┘                     └─────────┘
+   underline                   underline pulses
+```
+
+No chevrons. No layout shift (the magnified number renders via CSS transform, not flow).
+
+## Config additions (`src/config/app.config.ts`)
+
+Append under `touch`:
 
 ```ts
-touch: {
-  minTargetPx: 44,         // global min tap target
-  inputMinFontPx: 16,      // prevents iOS zoom-on-focus
-  longPressMs: 450,
-  longPressMoveTolerancePx: 8,
-  swipe: {
-    revealPx: 96,          // half-reveal distance for swipe-to-delete
-    deleteThresholdPx: 160,
-    velocityDeletePxPerSec: 800,
-  },
-  hapticsEnabled: true,    // wired through navigator.vibrate when present
-  safeArea: { top: true, bottom: true },
+scrub: {
+  enabled: true,
+  pxPerStep: 12,            // vertical pixels per 1 step
+  deadzonePx: 4,            // movement before scrub engages
+  pressHoldMs: 120,         // hold-to-engage without movement
+  magnifyScale: 1.25,
+  hapticPerStepMs: 5,
+  invertY: false,           // up = increase
 }
 ```
 
-Anything that currently hard-codes 44/88/long-press/etc. reads from here.
+RPE clamp uses existing `appConfig.rpe.min/max`.
 
-### 2. Global CSS additions (`src/index.css`)
+## Files to edit
 
-- `html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }`
-- `body { user-select: none; -webkit-user-select: none; touch-action: manipulation; overscroll-behavior: none; }`
-- Re-enable `user-select: text` on `input, textarea, [contenteditable], .selectable`.
-- New utility classes:
-  - `.touch-target` — `min-h-[44px] min-w-[44px] inline-flex items-center justify-center` (applied to icon buttons across Logger / Home / TopBar).
-  - `.no-zoom-input` — `font-size: 16px` on phones via `@media (max-width: 640px)`; applied to all numeric/text inputs (StepperInput, rest seconds, section rename).
-  - `.swipe-row` — `touch-action: pan-y;` so horizontal Framer drag captures cleanly without fighting page scroll.
-  - `.h-scroll` — `touch-action: pan-x; overscroll-behavior-x: contain;` for `edge-fade-x` containers (timeline, metric tables).
-  - `.safe-top` / `.safe-bottom` — `padding-top/bottom: env(safe-area-inset-*)`.
+1. **`src/config/app.config.ts`** — add `touch.scrub` block.
+2. **`src/pages/Logger.tsx`** — rewrite `StepperInput` (≈lines 1251–1338):
+   - Remove `ChevronUp`/`ChevronDown` buttons and the `startRepeat`/`stopRepeat` long-press repeater.
+   - Add a new `clamp` prop (`{ min?: number; max?: number }`) so RPE can pass `{min:1,max:10}`. Other metrics pass `{min:0}`.
+   - Wrap the `<input>` in a `motion.div` (framer-motion already in the project) that:
+     - Captures `onPointerDown` → records start Y, starts a `pressHoldMs` timer.
+     - On `onPointerMove`: if `|dy| > deadzonePx` OR hold-timer fired → engage scrub: `input.blur()`, `setPointerCapture`, set `style.touchAction='none'`, scale to `magnifyScale`. Compute `steps = Math.trunc(-dy / pxPerStep)` (negative because screen Y grows downward). On step change, call `adjust(stepsDelta)`; reset reference Y by `stepsDelta * pxPerStep` so further movement is relative.
+     - On `onPointerUp`/`onPointerCancel`: release capture, reset transform, clear timers. If never engaged → allow the natural `focus` (tap-to-type).
+   - `adjust` clamps to `[clamp.min ?? 0, clamp.max ?? Infinity]` and respects `decimals` from step.
+   - Keep existing `inputMode="decimal"`, `no-zoom-input`, prefilled italic styling.
+3. **`src/pages/Logger.tsx`** — `StepperInput` call site (~line 1400): pass `clamp={ m === 'rpe' ? { min: appConfig.rpe.min, max: appConfig.rpe.max } : { min: 0 } }`.
+4. **`src/index.css`** — add a tiny `.scrubbing` utility:
+   ```css
+   .scrubbing { touch-action: none; cursor: ns-resize; }
+   ```
+   (transform/scale handled inline via framer-motion `animate`).
 
-### 3. PWA install + standalone correctness
+## Edge cases handled
 
-- Add `public/manifest.webmanifest` with `name`, `short_name`, `display: standalone`, `theme_color`, `background_color`, `start_url: "/"`, icons (use existing `placeholder.svg` + a generated 192/512 PNG).
-- `index.html`: link the manifest, add `<meta name="apple-mobile-web-app-capable" content="yes">`, `<meta name="apple-mobile-web-app-status-bar-style" content="default">`, `<meta name="mobile-web-app-capable" content="yes">`, apple-touch-icon link.
-- **No service worker** (per project guidance — install-only, not full PWA).
-
-### 4. Component-level fixes (apply utilities, no logic changes)
-
-- **Logger TopBar / SessionTimer / floating selection bar**: wrap with `safe-top` / `safe-bottom`; rebuild action row to wrap and use `.touch-target`.
-- **ItemRow header buttons** (`Replace`, `Settings2`, `RestEditor` "go", complete checkbox): swap `p-1` / `h-4 w-4` → `.touch-target` with `h-4 w-4` icon inside.
-- **StepperInput**: input gets `.no-zoom-input`; chevrons become 28×28 hit area (still visually small) using `.touch-target` + smaller inner icon. Also add `inputMode="decimal"` and `pattern="[0-9]*\\.?[0-9]*"` for native numeric keypad.
-- **SetRow swipe**: add `className="swipe-row"`; replace hard-coded `REVEAL=88`, `DELETE_THRESHOLD=REVEAL*1.8`, `vx<-800` with `appConfig.touch.swipe.*`. On successful reveal/delete, fire `navigator.vibrate?.(10)`.
-- **Long-press hook (`useLongPress`)**: read `longPressMs` + `longPressMoveTolerancePx` from config; track `touchmove` and cancel if movement exceeds tolerance; add `event.preventDefault()` only when `triggered.current` to avoid breaking scroll. Add `style={{ WebkitTouchCallout: 'none' }}` via a returned `style` prop or wrap in `.no-callout` utility.
-- **SectionTitle**: replace hover-revealed pencil/trash with always-visible `.touch-target` icons at reduced opacity; tap to act.
-- **Home progress timeline**: container gets `.h-scroll`; bars get `.touch-target` wrapper while keeping the visible 6×24px bar inside (tap area expands invisibly so peek popovers reliably trigger).
-- **Rest "go" / "rest" / preset chips / notation chips**: swap `px-1.5 py-0.5` → use `.touch-target` (square) where they're icon-only, otherwise add `min-h-[36px]` for text chips to stay shootable without bloating.
-- **Popover / Sheet content**: cap width at `min(92vw, 360px)` for any popover used inside Logger, so they don't overflow.
-
-### 5. Files to edit
-
-- `src/config/app.config.ts` — add `touch` block.
-- `src/index.css` — global rules + utilities.
-- `index.html` — manifest link + PWA meta tags.
-- `public/manifest.webmanifest` (new), `public/icon-192.png`, `public/icon-512.png` (new, generated).
-- `src/hooks/useLongPress.ts` — config-driven, movement tolerance.
-- `src/pages/Logger.tsx` — apply `.touch-target` / `.swipe-row` / `.no-zoom-input`, safe-area wrappers, swipe constants from config, SectionTitle visibility.
-- `src/pages/Home.tsx` — `.h-scroll` on timeline, `.touch-target` on bars and quick-action grid.
-- `src/components/TopBar.tsx` — `.safe-top`.
-- `src/pages/Plan.tsx`, `src/pages/Calendar.tsx`, `src/pages/Stats.tsx`, `src/pages/Library.tsx`, `src/pages/ActivityLogger.tsx` — pass over with same utility classes (no logic changes).
+- Two-finger / pinch: ignored — only the first pointer is tracked (`pointerId` recorded on down).
+- If user scrolls vertically the page outside the input, no change — scrub only engages once pointer is down on the input.
+- Empty value: scrub starts from `0` (matches current `adjust` logic).
+- Reduced-motion users: skip the magnify animation (CSS `@media (prefers-reduced-motion)` already zeros transitions globally).
+- Accessibility: keep `aria-label` on the input; expose `role="spinbutton"` with `aria-valuemin`/`aria-valuemax`/`aria-valuenow` so screen readers and keyboard arrow keys still adjust the value (Up/Down arrow on focused input → ±step, like the native number input already does).
 
 ## Out of scope
 
-- No service worker / offline cache (per project PWA guidance).
-- No layout redesign — only sizing, spacing, gesture handling, and PWA manifest.
-- No new Capacitor/native wrapper; this is web-PWA only.
-
-## Acceptance
-
-- Every interactive control has ≥44px hit area on phones.
-- Inputs do not trigger iOS zoom on focus.
-- Swipe-to-delete on a set never accidentally horizontally scrolls the metric table; vertical scrolling never accidentally triggers swipe.
-- Floating selection bar and TopBar respect notch / home indicator.
-- App can be installed to home screen and opens standalone with correct theme color.
-- All thresholds (tap target size, long-press, swipe distances, haptics) read from `appConfig.touch`.
+- Replacing chevrons elsewhere (e.g., rest seconds editor) — this change is scoped to per-set numeric fields inside movement cards. We can extend to other steppers in a follow-up if you want.
+- Changing units, step sizes, or formatting.
