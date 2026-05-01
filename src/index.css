@@ -214,4 +214,7 @@
     color: hsl(var(--muted-foreground));
     background: hsl(var(--surface));
   }
+
+  /* Touch-to-scrub numeric inputs */
+  .scrubbing { touch-action: none; cursor: ns-resize; }
 }
