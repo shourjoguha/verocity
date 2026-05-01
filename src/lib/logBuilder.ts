@@ -6,6 +6,20 @@ import type { ParsedPlan, PlanDay, PlannedSet } from "./types";
 let gid = 0;
 const newId = () => `g_${Date.now().toString(36)}_${(gid++).toString(36)}`;
 
+/** Seed RPE default on any set that is empty for an item that tracks RPE. */
+function seedRpeDefaults(item: LogItem) {
+  if (!item.metrics.includes("rpe")) return;
+  for (const set of item.sets) {
+    if (set.actual.rpe == null) {
+      set.actual.rpe = appConfig.rpe.default;
+      // Mark as prefilled so it renders muted/italic until user edits.
+      if (Object.keys(set.actual).filter((k) => k !== "rpe" && k !== "prefilled").length === 0) {
+        set.actual.prefilled = true;
+      }
+    }
+  }
+}
+
 function plannedToLogSets(planned: PlannedSet | null, defaultRest: number): LogSet[] {
   if (!planned) return [{ planned: null, actual: {}, notations: [], restAfterSeconds: defaultRest }];
   const count = planned.sets ?? 1;
@@ -68,6 +82,7 @@ export function buildLogDocument(plan: ParsedPlan, day: PlanDay, weekNumber: num
       sets: plannedToLogSets(planned, sectionRest),
       restBetweenSetsSeconds: sectionRest,
     };
+    seedRpeDefaults(item);
     const group: LogGroup = {
       id: newId(),
       kind: "single",
@@ -93,6 +108,7 @@ export function migrateDocument(doc: LogDocument): LogDocument {
         const { metrics, primary } = normalizeMetrics(it.metrics, it.primaryMetric, it.sets[0]?.planned ?? null);
         it.metrics = metrics;
         it.primaryMetric = primary;
+        seedRpeDefaults(it);
       }
     }
   }
