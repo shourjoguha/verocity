@@ -810,12 +810,14 @@ export default function Logger() {
 
       {/* Floating selection action bar */}
       {selected.size > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background border-2 border-foreground shadow-lg flex items-center gap-1 px-2 py-1 animate-fade-in">
-          <span className="px-2 text-[0.65rem] uppercase tracking-[0.14em]">{selected.size} selected</span>
-          <button onClick={() => groupSelected("superset")} className="px-3 py-2 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Group className="h-3 w-3" /> Superset</button>
-          <button onClick={() => groupSelected("circuit")} className="px-3 py-2 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Group className="h-3 w-3" /> Circuit</button>
-          <button onClick={ungroupSelected} className="px-3 py-2 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Ungroup className="h-3 w-3" /> Ungroup</button>
-          <button onClick={clearSelection} className="px-3 py-2 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80"><X className="h-3 w-3" /></button>
+        <div className="fixed left-1/2 -translate-x-1/2 z-50 animate-fade-in" style={{ bottom: `calc(1rem + env(safe-area-inset-bottom))` }}>
+          <div className="bg-foreground text-background border-2 border-foreground shadow-lg flex flex-wrap items-center justify-center gap-1 px-2 py-1 max-w-[calc(100vw-1rem)]">
+            <span className="px-2 text-[0.65rem] uppercase tracking-[0.14em]">{selected.size} selected</span>
+            <button onClick={() => groupSelected("superset")} className="touch-target-sm px-3 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Group className="h-3 w-3" /> Superset</button>
+            <button onClick={() => groupSelected("circuit")} className="touch-target-sm px-3 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Group className="h-3 w-3" /> Circuit</button>
+            <button onClick={ungroupSelected} className="touch-target-sm px-3 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80 flex items-center gap-1"><Ungroup className="h-3 w-3" /> Ungroup</button>
+            <button onClick={clearSelection} aria-label="Clear" className="touch-target-sm px-3 text-[0.65rem] uppercase tracking-[0.14em] hover:opacity-80"><X className="h-3 w-3" /></button>
+          </div>
         </div>
       )}
 
@@ -941,10 +943,10 @@ function SectionTitle({ name, editable, onRename, onRemove }: { name: string; ed
     );
   }
   return (
-    <div className="flex items-center gap-1 group" onClick={(e) => e.stopPropagation()}>
+    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
       <span className="font-display text-xl uppercase tracking-[-0.04em]">{name}</span>
-      <button onClick={() => setEditing(true)} className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-opacity"><Pencil className="h-3 w-3" /></button>
-      <button onClick={onRemove} className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-opacity"><Trash2 className="h-3 w-3" /></button>
+      <button onClick={() => setEditing(true)} aria-label="Rename section" className="touch-target-sm text-muted-foreground/60 hover:text-foreground transition-colors"><Pencil className="h-3 w-3" /></button>
+      <button onClick={onRemove} aria-label="Remove section" className="touch-target-sm text-muted-foreground/60 hover:text-foreground transition-colors"><Trash2 className="h-3 w-3" /></button>
     </div>
   );
 }
@@ -1417,9 +1419,11 @@ function SetRow(props: {
       <td className="text-right relative">
         <button
           onClick={props.onToggleComplete}
-          className={`h-4 w-4 border ${set.actual.completed ? "bg-foreground border-foreground" : "hairline"}`}
+          className="touch-target-sm"
           aria-label="Toggle complete"
-        />
+        >
+          <span className={cn("h-4 w-4 border block", set.actual.completed ? "bg-foreground border-foreground" : "hairline")} />
+        </button>
         <motion.div
           className="absolute top-0 left-full h-full flex items-center justify-center pointer-events-none"
           style={{ width: REVEAL, backgroundColor: "hsl(0 65% 42%)", opacity: actionOpacity }}
