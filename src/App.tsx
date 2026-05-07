@@ -7,6 +7,7 @@ import { SessionProvider, useSession } from "@/lib/session";
 import { AccessGate } from "@/components/AccessGate";
 import { UserPicker } from "@/components/UserPicker";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Home from "./pages/Home";
 import PlanUpload from "./pages/PlanUpload";
 import Logger from "./pages/Logger";
@@ -17,7 +18,15 @@ import Plan from "./pages/Plan";
 import ActivityLogger from "./pages/ActivityLogger";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+      refetchOnWindowFocus: true,
+    },
+  },
+});
 
 function GatedRoutes() {
   const { unlocked, user, loading } = useSession();
@@ -49,7 +58,9 @@ const App = () => (
       <BrowserRouter>
         <SessionProvider>
           <ConfirmProvider>
-            <GatedRoutes />
+            <ErrorBoundary>
+              <GatedRoutes />
+            </ErrorBoundary>
           </ConfirmProvider>
         </SessionProvider>
       </BrowserRouter>
