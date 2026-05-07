@@ -29,6 +29,7 @@ import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup,
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
 import { loadHistory, prefillFromHistory } from "@/lib/lastPerformance";
+import { makeDayKey, nextWeekForDayKey } from "@/lib/weekPicker";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion, useMotionValue, useTransform, animate, type PanInfo } from "framer-motion";
 
@@ -137,9 +138,11 @@ export default function Logger() {
           const plan = (planRow.parsed as unknown as ParsedPlan);
           const planDay = plan.days.find((d) => d.dayName === day) ?? plan.days[0];
           setPlanId(planRow.id);
-          setDayKey(`${planDay.dayName} — ${planDay.type}`);
-          setWeekNumber(week || isoWeekIndexFromStart(planRow.start_date));
-          const built = buildLogDocument(plan, planDay, week || isoWeekIndexFromStart(planRow.start_date));
+          const dKey = makeDayKey(planDay.dayName, planDay.type);
+          setDayKey(dKey);
+          const resolvedWeek = week || (await nextWeekForDayKey(user.id, dKey));
+          setWeekNumber(resolvedWeek);
+          const built = buildLogDocument(plan, planDay, resolvedWeek);
           const history = await loadHistory(user.id);
           setDoc(prefillFromHistory(built, history));
           const inferred = appConfig.activity.dayTypeTag(planDay.type);
