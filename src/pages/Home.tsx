@@ -459,7 +459,13 @@ function DayRail(props: {
       </div>
 
       {active && (
-        <div className="mt-3 border hairline p-5 animate-fade-in">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => onPreview(active)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPreview(active); } }}
+          className="mt-3 border hairline p-5 animate-fade-in text-left w-full cursor-pointer hover:bg-secondary transition-colors duration-slow ease-swiss"
+        >
           <h2 className="font-display text-3xl tracking-[-0.04em]">{active.type}</h2>
           <div className="mt-1 text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground" aria-hidden>&nbsp;</div>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -469,7 +475,7 @@ function DayRail(props: {
             )}
           </div>
           <div className="mt-5 flex gap-2">
-            <button onClick={() => onStart(active)} className="ll-btn">Start workout</button>
+            <button onClick={(e) => { e.stopPropagation(); onStart(active); }} className="ll-btn">Start workout</button>
           </div>
         </div>
       )}
