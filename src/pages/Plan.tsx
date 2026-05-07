@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { appConfig, type Metric } from "@/config/app.config";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import type { ParsedPlan, PlanExercise, PlanDay } from "@/lib/types";
+import type { ParsedPlan, PlanExercise, PlanDay, LogDocument } from "@/lib/types";
 import { parsePlannedCell } from "@/lib/planParser";
 import { LibraryPicker } from "@/components/LibraryPicker";
 import { WarmupStrip } from "@/components/plan/WarmupStrip";
