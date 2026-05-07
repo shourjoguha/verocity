@@ -1,8 +1,11 @@
 /** Library picker modal: search shared + custom movements, swap/add. Also adds custom. */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { X, Plus } from "lucide-react";
 import { appConfig, type Metric } from "@/config/app.config";
+import { useMovements, qk, type MovementRow as Row } from "@/hooks/queries";
+import { toast } from "sonner";
 
 export type PickedMovement = {
   id: string;
@@ -12,20 +15,10 @@ export type PickedMovement = {
   default_rest_seconds: number;
 };
 
-type Row = {
-  id: string;
-  name: string;
-  category: string | null;
-  tags: string[] | null;
-  default_metrics: string[] | null;
-  primary_metric: string | null;
-  default_rest_seconds: number | null;
-  owner_user_id: string | null;
-};
-
 export function LibraryPicker(props: { ownerId?: string; onClose: () => void; onPick: (m: PickedMovement) => void }) {
   const { ownerId, onClose, onPick } = props;
-  const [rows, setRows] = useState<Row[]>([]);
+  const qc = useQueryClient();
+  const { data: rows = [], isError } = useMovements(ownerId);
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<string | "all">("all");
   const [creating, setCreating] = useState(false);
@@ -35,14 +28,6 @@ export function LibraryPicker(props: { ownerId?: string; onClose: () => void; on
   const [metrics, setMetrics] = useState<Set<Metric>>(new Set(["weight", "reps", "rpe"]));
   const [primary, setPrimary] = useState<Metric>("weight");
   const [rest, setRest] = useState(90);
-
-  useEffect(() => {
-    supabase.from("movements")
-      .select("id,name,category,tags,default_metrics,primary_metric,default_rest_seconds,owner_user_id")
-      .or(`owner_user_id.is.null${ownerId ? `,owner_user_id.eq.${ownerId}` : ""}`)
-      .order("name", { ascending: true })
-      .then(({ data }) => setRows((data as Row[]) ?? []));
-  }, [ownerId]);
 
   const categories = useMemo(() => Array.from(new Set(rows.map((r) => r.category).filter(Boolean))) as string[], [rows]);
   const filtered = rows.filter((r) =>
@@ -70,7 +55,8 @@ export function LibraryPicker(props: { ownerId?: string; onClose: () => void; on
       primary_metric: primary,
       default_rest_seconds: rest,
     }]).select("*").single();
-    if (error || !data) return;
+    if (error || !data) { toast.error("Create failed"); return; }
+    qc.invalidateQueries({ queryKey: qk.movements(ownerId) });
     pick(data as Row);
   }
 
@@ -85,6 +71,7 @@ export function LibraryPicker(props: { ownerId?: string; onClose: () => void; on
         {!creating && (
           <>
             <div className="p-3 border-b hairline space-y-2">
+              {isError && <div className="text-xs text-destructive">Failed to load movements.</div>}
               <input
                 autoFocus value={q} onChange={(e) => setQ(e.target.value)}
                 placeholder="Search…"
