@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { format } from "date-fns";
+import { useQueryClient } from "@tanstack/react-query";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
 import { useSession } from "@/lib/session";
@@ -56,6 +57,7 @@ const parseKey = (k: string): SelectionKey => {
 export default function Logger() {
   const nav = useNavigate();
   const { user } = useSession();
+  const qc = useQueryClient();
   const params = useParams<{ id?: string }>();
   const [search] = useSearchParams();
   const confirm = useConfirm();
@@ -86,6 +88,7 @@ export default function Logger() {
   useEffect(() => {
     if (!user) return;
     (async () => {
+      try {
       if (logId) {
         const { data } = await supabase.from("workout_logs").select("*").eq("id", logId).maybeSingle();
         if (data) {
@@ -155,6 +158,10 @@ export default function Logger() {
         setStatus("in_progress");
         sw.start();
       }
+      } catch (e) {
+        console.error(e);
+        toast.error("Failed to load session");
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -201,6 +208,7 @@ export default function Logger() {
     }
     setSavedTick((n) => n + 1);
     if (showToast) toast.success("Saved");
+    qc.invalidateQueries({ queryKey: ["logs"] });
   }
 
   // Session controls
@@ -225,6 +233,7 @@ export default function Logger() {
       const { error } = await supabase.from("workout_logs").delete().eq("id", logId);
       if (error) { toast.error("Delete failed"); return; }
     }
+    qc.invalidateQueries({ queryKey: ["logs"] });
     toast.success("Session deleted");
     nav("/");
   }

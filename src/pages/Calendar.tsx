@@ -2,19 +2,17 @@
  *  - One thin colored bar per session, color from dominant tag.
  *  - Cancelled logs are filtered out.
  *  - Click a bar → open log. Click a cell (anywhere else) → AddSessionMenu. */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
-import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { appConfig } from "@/config/app.config";
 import { AddSessionMenu } from "@/components/AddSessionMenu";
 import { sessionTypeFromDayKey } from "@/lib/utils";
-
-type LogRow = { id: string; log_date: string; day_key: string | null; status: string; total_seconds: number | null; tags: string[] | null; activity_type: string | null };
+import { useMonthLogs, type CalendarLogRow as LogRow } from "@/hooks/queries";
 
 function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function endOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
@@ -32,26 +30,15 @@ export default function Calendar() {
   const nav = useNavigate();
   const { user } = useSession();
   const [cursor, setCursor] = useState(new Date());
-  const [logs, setLogs] = useState<Record<string, LogRow[]>>({});
   const [addFor, setAddFor] = useState<string | null>(null);
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);
-
-  useEffect(() => {
-    if (!user) return;
-    supabase.from("workout_logs")
-      .select("id,log_date,day_key,status,total_seconds,tags,activity_type")
-      .eq("owner_user_id", user.id)
-      .neq("status", "cancelled")
-      .gte("log_date", ymd(monthStart))
-      .lte("log_date", ymd(monthEnd))
-      .order("log_date", { ascending: true })
-      .then(({ data }) => {
-        const map: Record<string, LogRow[]> = {};
-        (data as LogRow[] | null)?.forEach((r) => { (map[r.log_date] ??= []).push(r); });
-        setLogs(map);
-      });
-  }, [user, cursor]);
+  const { data: logsArr = [], isError } = useMonthLogs(user?.id, ymd(monthStart), ymd(monthEnd));
+  const logs = useMemo(() => {
+    const map: Record<string, LogRow[]> = {};
+    for (const r of logsArr) (map[r.log_date] ??= []).push(r);
+    return map;
+  }, [logsArr]);
 
   const cells = useMemo(() => {
     const offset = monthStart.getDay(); // Sun=0
@@ -85,6 +72,7 @@ export default function Calendar() {
             <div key={d} className="px-1 py-1">{d}</div>
           ))}
         </div>
+        {isError && <div className="mt-2 text-xs text-destructive">Failed to load calendar.</div>}
         <div className="grid grid-cols-7 border-l border-t hairline">
           {cells.map((c) => {
             if (!c.date) return <div key={c.key} className="aspect-square border-r border-b hairline bg-secondary/40" />;

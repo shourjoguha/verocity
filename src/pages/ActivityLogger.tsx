@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { format } from "date-fns";
+import { useQueryClient } from "@tanstack/react-query";
 import { CalendarIcon, Save } from "lucide-react";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
@@ -17,6 +18,7 @@ import { toast } from "sonner";
 export default function ActivityLogger() {
   const nav = useNavigate();
   const { user } = useSession();
+  const qc = useQueryClient();
   const [search] = useSearchParams();
   const initialTag = (search.get("tag") as ActivityTag | null);
   const initialDate = search.get("date");
@@ -57,6 +59,7 @@ export default function ActivityLogger() {
     }]);
     setSaving(false);
     if (error) { toast.error("Save failed"); return; }
+    qc.invalidateQueries({ queryKey: ["logs"] });
     toast.success("Activity logged");
     nav("/");
   }

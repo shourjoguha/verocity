@@ -2,13 +2,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/session";
 import { appConfig } from "@/config/app.config";
-import type { ParsedPlan } from "@/lib/types";
 import { ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadDoneCountsByDayKey, makeDayKey, nextWeekFromMap } from "@/lib/weekPicker";
+import { useActivePlan } from "@/hooks/queries";
 
 interface Props {
   open: boolean;
@@ -23,16 +22,13 @@ export function AddSessionMenu({ open, onClose, date }: Props) {
   const nav = useNavigate();
   const { user } = useSession();
   const [step, setStep] = useState<Step>("root");
-  const [plan, setPlan] = useState<ParsedPlan | null>(null);
+  const planQ = useActivePlan(user?.id);
+  const plan = planQ.data?.parsed ?? null;
   const [doneCounts, setDoneCounts] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (!user || !open) return;
-    supabase.from("plans").select("parsed").eq("owner_user_id", user.id).eq("is_active", true).maybeSingle()
-      .then(({ data }) => {
-        setPlan((data?.parsed as unknown as ParsedPlan) ?? null);
-      });
-    loadDoneCountsByDayKey(user.id).then(setDoneCounts);
+    loadDoneCountsByDayKey(user.id).then(setDoneCounts).catch((e) => console.error("loadDoneCounts failed", e));
   }, [user, open]);
 
   useEffect(() => { if (open) setStep("root"); }, [open]);

@@ -1,44 +1,80 @@
-## Goal
+# React Query refactor + root ErrorBoundary
 
-Two related fixes to how plan-day workouts are picked:
+Goal: replace ad-hoc `useEffect + useState` Supabase reads with TanStack Query (already installed, unused), centralize keys/fetchers, and add a root ErrorBoundary. No new dependencies, no schema changes.
 
-1. **Sequential week per day-type** — when starting a plan day (e.g. "Upper A"), the week selected should be `(# of completed logs of that day-type) + 1`, not the calendar week relative to the plan's start date. This handles skipped/flexible scheduling.
-2. **Remove day-name tags** from the plan picker, keeping the same vertical spacing so layout doesn't shift.
+## 1. Root error boundary
 
-## Changes
+Create `src/components/ErrorBoundary.tsx`:
+- Class component, `componentDidCatch` logs to `console.error`.
+- State `{ error: Error | null }`, `reset()` clears it.
+- Fallback UI uses existing tokens: `bg-surface border hairline`, uppercase `tracking-[0.16em]` muted labels, `font-display` headline, existing `ll-btn` buttons.
+- Buttons: "Try again" (calls `reset`) and "Go home" (uses `window.location.assign("/")` — class component, no router hook).
+- Shows `error.message` in a `text-xs font-mono` block.
 
-### 1. Sequential week selection (`src/components/AddSessionMenu.tsx`)
+Wrap `<GatedRoutes />` in `src/App.tsx` with `<ErrorBoundary>`.
 
-- Replace `weekFromDate()` with `nextWeekForDayType(dayName, dayType)`:
-  - Query `workout_logs` for current user where `status = 'done'` and `day_key` starts with `${dayName} — ${dayType}` (matches the format Logger writes: `${dayName} — ${planDay.type}`).
-  - Return `count + 1`, clamped to `[1, 16]`. If no plan day match, fall back to 1.
-- Pre-fetch completed log counts when the dialog opens (one query: `select day_key` filtered by user + status=done) and build a `Map<dayKey, count>` so the picker is instant.
-- `pickPlanDay` uses the computed sequential week instead of `weekFromDate()`. The `?date=` param is still passed so the log is dated correctly; only the `week` differs.
-- Remove `planStartDate` state and the related fetch field — no longer needed for week math (the plan query stays for `parsed`).
+## 2. QueryClient defaults
 
-### 2. Logger fallback (`src/pages/Logger.tsx`, line ~141-142)
-
-- When `?week=` is missing and we need a fallback, use the same sequential rule instead of `isoWeekIndexFromStart(planRow.start_date)`. Extract a small helper `nextWeekForDayType(userId, dayKey)` in `src/lib/lastPerformance.ts` (or a new `src/lib/weekPicker.ts`) so both AddSessionMenu and Logger share it.
-- `isoWeekIndexFromStart` can stay (still referenced elsewhere) but is no longer the default for new sessions.
-
-### 3. Remove day-name tag in plan picker (`src/components/AddSessionMenu.tsx`)
-
-Inside the `step === "plan"` block, each button currently renders:
-
-```tsx
-<div className="font-display text-base ...">{d.type}</div>
-<div className="text-[0.6rem] uppercase ... mt-0.5">{d.dayName}</div>
+In `src/App.tsx`:
+```ts
+new QueryClient({
+  defaultOptions: { queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: true } }
+})
 ```
 
-- Remove the `{d.dayName}` line but keep the spacing reserved with an empty placeholder of the same height/margin (e.g. `<div className="text-[0.6rem] mt-0.5" aria-hidden>&nbsp;</div>`) so the cards don't visually shrink.
+## 3. Centralized hooks: `src/hooks/queries.ts`
 
-### Out of scope
+Exports:
 
-- `DayPreviewDialog` still shows "Monday · Week N" — the user mentioned the picker, so leaving that header alone unless they call it out.
-- Plan editor table layout (`Plan.tsx`) is unchanged.
+**Query keys** (`qk`):
+- `activePlan(userId)` → `["plan","active",userId]`
+- `recentLogs(userId, limit)` → `["logs","recent",userId,limit]`
+- `allLogs(userId)` → `["logs","all",userId]`
+- `doneLogsForPlan(userId)` → `["logs","done-for-plan",userId]`
+- `statsLogs(userId)` → `["logs","stats",userId]`
+- `monthLogs(userId, start, end)` → `["logs","month",userId,start,end]`
+- `movements(ownerId)` → `["movements",ownerId]`
+- `adoptablePlans(userId)` → `["plans","adoptable",userId]`
 
-## Files touched
+**Types**: `ActivePlanRow`, `LogRow`, `LogRowWithData`, `PlanLogRow`, `CalendarLogRow`, `AdoptablePlan`, `MovementRow` — derived from existing page-local shapes (no `as unknown as`; rely on generated `Database` types + narrow projections).
 
-- `src/components/AddSessionMenu.tsx`
-- `src/pages/Logger.tsx`
-- `src/lib/weekPicker.ts` (new, small shared helper)
+**Hooks**: each `useQuery` with `enabled: !!userId`, throws on `error`, applies `.limit(500)` on otherwise unbounded queries.
+- `useActivePlan` — `plans` where `is_active=true`, `maybeSingle`.
+- `useRecentLogs(userId, limit=5)` — order by `log_date desc`, `.limit(limit)`.
+- `useAllUserLogs` — minimal columns, `.limit(500)`.
+- `useDoneLogsForPlan` — `status=done`, columns needed by Plan, `.limit(500)`.
+- `useStatsLogs` — same projection Stats uses today, `.limit(500)`.
+- `useMonthLogs(userId, start, end)` — `gte/lte log_date`, `.limit(500)`.
+- `useMovements(ownerId)` — `.limit(500)`.
+- `useAdoptablePlans(userId, { enabled })` — two-step: fetch other users' plans, then `app_users` for `display_name`, merge into `AdoptablePlan[]`.
+
+## 4. Page migrations
+
+Replace local `useEffect`/`useState` reads + drop `as unknown as ...` casts:
+
+- **Stats.tsx** → `useStatsLogs`; show inline `text-destructive` text when `isError`.
+- **Calendar.tsx** → `useMonthLogs`; group by `log_date` in `useMemo`; inline error text.
+- **Home.tsx** → `useActivePlan` + `useRecentLogs` + `useAllUserLogs`. Remove `visibilitychange`/`focus` listeners (React Query handles via `refetchOnWindowFocus`). Keep the realtime channel; on event, call `queryClient.invalidateQueries({ queryKey: qk.recentLogs(...) })` and `qk.allLogs(...)`. Combined error → single inline banner.
+- **Plan.tsx** → `useActivePlan` + `useDoneLogsForPlan`. Load-once hydration: a `useEffect` copies server data into local `plan` state only while `planDbId == null`, so focus refetches don't overwrite unsaved auto-save edits. Add error fallback view.
+- **LibraryPicker.tsx** → `useMovements`; on `createCustom` failure `toast.error`; on success `queryClient.invalidateQueries({ queryKey: qk.movements(ownerId) })`; inline error banner on read failure.
+- **AddSessionMenu.tsx** → `useActivePlan` (shares cache with Home/Plan); add `.catch` on `loadDoneCountsByDayKey`.
+- **PlanUpload.tsx** → `useAdoptablePlans(user?.id, { enabled: adoptOpen })`. After successful `save()` and successful `adoptPlan()`, invalidate `qk.activePlan(user.id)`. Show error state inside adopt dialog.
+
+## 5. Imperative paths (kept as-is, hardened)
+
+- **Logger.tsx**: wrap initial-load IIFE in `try/catch` + `toast.error`. After `saveLog` success and after `cancelSession` delete, `queryClient.invalidateQueries({ queryKey: ["logs"] })` (matches all log keys).
+- **ActivityLogger.tsx**: after successful insert in `save()`, invalidate `["logs"]`.
+
+## Technical notes
+
+- All hooks share the same `QueryClient` from `App.tsx` via `QueryClientProvider` (already mounted).
+- "Throw on error" = inside `queryFn`: `if (error) throw error;` so React Query surfaces `isError` and the ErrorBoundary catches render-time throws.
+- `["logs"]` prefix invalidation works because every log key starts with `"logs"`.
+- No changes to `src/integrations/supabase/client.ts` or `src/integrations/supabase/types.ts`.
+- No new packages; `@tanstack/react-query` is already in `package.json`.
+
+## Out of scope
+
+- Mutations are not converted to `useMutation` (only invalidations added).
+- No RLS / schema / auth changes.
+- No design token additions; reuses existing `hairline`, `ll-btn`, `bg-surface`, `text-muted-foreground`, `text-destructive`.

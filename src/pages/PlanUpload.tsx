@@ -1,6 +1,7 @@
 /** Plan upload — strict markdown parse, AI fallback via edge function, then review. */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
 import { parsePlanMarkdown } from "@/lib/planParser";
@@ -9,6 +10,7 @@ import { useSession } from "@/lib/session";
 import type { ParsedPlan } from "@/lib/types";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useAdoptablePlans, qk, type AdoptablePlan } from "@/hooks/queries";
 
 const FORMAT_EXAMPLE = `# Plan title
 **Start:** 2026-01-01
@@ -33,20 +35,10 @@ const FORMAT_EXAMPLE = `# Plan title
 | Main | Back Squat | 3x5 @70% | 3x5 @72.5% | 3x5 @75% | deload |
 `;
 
-type AdoptablePlan = {
-  id: string;
-  name: string;
-  owner_user_id: string;
-  parsed: ParsedPlan;
-  source_markdown: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  ownerName?: string;
-};
-
 export default function PlanUpload() {
   const nav = useNavigate();
   const { user } = useSession();
+  const qc = useQueryClient();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [parsed, setParsed] = useState<ParsedPlan | null>(null);
@@ -54,9 +46,10 @@ export default function PlanUpload() {
   const [usedFallback, setUsedFallback] = useState(false);
 
   const [adoptOpen, setAdoptOpen] = useState(false);
-  const [adoptList, setAdoptList] = useState<AdoptablePlan[]>([]);
-  const [adoptLoading, setAdoptLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const adoptQ = useAdoptablePlans(user?.id, { enabled: adoptOpen });
+  const adoptList = adoptQ.data ?? [];
+  const adoptLoading = adoptQ.isLoading;
 
   async function onFile(f: File) {
     const t = await f.text();
@@ -123,33 +116,13 @@ export default function PlanUpload() {
       }]).select("id").single();
       if (error) throw error;
       toast.success("Plan saved.");
+      if (user) qc.invalidateQueries({ queryKey: qk.activePlan(user.id) });
       nav("/");
     } catch (e) {
       toast.error(`Save failed. ${(e as Error).message ?? ""}`);
     }
     setBusy(false);
   }
-
-  // Load adoptable plans when dialog opens
-  useEffect(() => {
-    if (!adoptOpen || !user) return;
-    setAdoptLoading(true);
-    (async () => {
-      const { data: plans } = await supabase
-        .from("plans")
-        .select("id,name,owner_user_id,parsed,source_markdown,start_date,end_date")
-        .neq("owner_user_id", user.id)
-        .order("created_at", { ascending: false });
-      const list = (plans ?? []) as unknown as AdoptablePlan[];
-      const ownerIds = Array.from(new Set(list.map((p) => p.owner_user_id)));
-      const { data: users } = ownerIds.length
-        ? await supabase.from("app_users").select("id,display_name").in("id", ownerIds)
-        : { data: [] as { id: string; display_name: string }[] };
-      const nameMap = new Map((users ?? []).map((u) => [u.id, u.display_name]));
-      setAdoptList(list.map((p) => ({ ...p, ownerName: nameMap.get(p.owner_user_id) ?? "anonymous" })));
-      setAdoptLoading(false);
-    })();
-  }, [adoptOpen, user]);
 
   async function adoptPlan(src: AdoptablePlan) {
     if (!user) return;
@@ -167,6 +140,7 @@ export default function PlanUpload() {
       }]).select("id").single();
       if (error) throw error;
       toast.success(`Adopted "${src.name}".`);
+      qc.invalidateQueries({ queryKey: qk.activePlan(user.id) });
       setAdoptOpen(false);
       nav("/");
     } catch (e) {
@@ -272,6 +246,7 @@ export default function PlanUpload() {
           </DialogHeader>
           <div className="overflow-y-auto -mx-6 px-6">
             {adoptLoading && <div className="text-xs text-muted-foreground py-6">Loading…</div>}
+            {adoptQ.isError && <div className="text-xs text-destructive py-6">Failed to load plans.</div>}
             {!adoptLoading && adoptList.length === 0 && (
               <div className="text-xs text-muted-foreground py-6 uppercase tracking-[0.14em]">No plans available to adopt</div>
             )}
