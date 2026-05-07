@@ -8,6 +8,7 @@ import { appConfig } from "@/config/app.config";
 import type { ParsedPlan } from "@/lib/types";
 import { ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { loadDoneCountsByDayKey, makeDayKey, nextWeekFromMap } from "@/lib/weekPicker";
 
 interface Props {
   open: boolean;
@@ -23,29 +24,23 @@ export function AddSessionMenu({ open, onClose, date }: Props) {
   const { user } = useSession();
   const [step, setStep] = useState<Step>("root");
   const [plan, setPlan] = useState<ParsedPlan | null>(null);
-  const [planStartDate, setPlanStartDate] = useState<string | null>(null);
+  const [doneCounts, setDoneCounts] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (!user || !open) return;
-    supabase.from("plans").select("parsed,start_date").eq("owner_user_id", user.id).eq("is_active", true).maybeSingle()
+    supabase.from("plans").select("parsed").eq("owner_user_id", user.id).eq("is_active", true).maybeSingle()
       .then(({ data }) => {
         setPlan((data?.parsed as unknown as ParsedPlan) ?? null);
-        setPlanStartDate(data?.start_date ?? null);
       });
+    loadDoneCountsByDayKey(user.id).then(setDoneCounts);
   }, [user, open]);
 
   useEffect(() => { if (open) setStep("root"); }, [open]);
 
-  function weekFromDate(): number {
-    if (!planStartDate) return 1;
-    const start = new Date(planStartDate + "T00:00:00");
-    const target = new Date(date + "T00:00:00");
-    const diff = Math.floor((target.getTime() - start.getTime()) / 86_400_000);
-    return Math.max(1, Math.min(16, Math.floor(diff / 7) + 1));
-  }
-
   function pickPlanDay(dayName: string) {
-    const w = weekFromDate();
+    const planDay = plan?.days.find((d) => d.dayName === dayName);
+    const dayKey = planDay ? makeDayKey(planDay.dayName, planDay.type) : dayName;
+    const w = nextWeekFromMap(doneCounts, dayKey);
     nav(`/log/new?day=${encodeURIComponent(dayName)}&week=${w}&date=${date}`);
     onClose();
   }
@@ -108,7 +103,7 @@ export function AddSessionMenu({ open, onClose, date }: Props) {
                   className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss"
                 >
                   <div className="font-display text-base tracking-[-0.03em]">{d.type}</div>
-                  <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground mt-0.5">{d.dayName}</div>
+                  <div className="text-[0.6rem] uppercase tracking-[0.14em] mt-0.5" aria-hidden>&nbsp;</div>
                 </button>
               ))}
               {!plan && <div className="text-xs text-muted-foreground py-4">No active plan.</div>}
