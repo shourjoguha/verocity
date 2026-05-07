@@ -10,17 +10,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { appConfig, type Metric } from "@/config/app.config";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import type { ParsedPlan, LogDocument, PlanExercise, PlanDay } from "@/lib/types";
+import type { ParsedPlan, PlanExercise, PlanDay } from "@/lib/types";
 import { parsePlannedCell } from "@/lib/planParser";
 import { LibraryPicker } from "@/components/LibraryPicker";
 import { WarmupStrip } from "@/components/plan/WarmupStrip";
 import { cn } from "@/lib/utils";
 import { GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { useActivePlan, useDoneLogsForPlan, type PlanLogRow as LogRow } from "@/hooks/queries";
 
 const WEEKS = Array.from({ length: 16 }, (_, i) => i + 1);
-
-type LogRow = { week_number: number | null; day_key: string | null; data: LogDocument; status: string };
 
 function bestActualForMovement(logDoc: LogDocument, movementName: string): string | null {
   for (const s of logDoc.sections) {
@@ -52,34 +51,37 @@ function bestActualForMovement(logDoc: LogDocument, movementName: string): strin
 
 export default function Plan() {
   const { user } = useSession();
+  const planQ = useActivePlan(user?.id);
+  const logsQ = useDoneLogsForPlan(user?.id);
   const [plan, setPlan] = useState<ParsedPlan | null>(null);
   const [planDbId, setPlanDbId] = useState<string | null>(null);
-  const [logsByDay, setLogsByDay] = useState<Map<string, LogRow[]>>(new Map());
-  const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [picker, setPicker] = useState<{ dayIdx: number } | null>(null);
 
+  // Load-once hydration: only seed local plan state while we don't yet have a planDbId.
+  // Prevents window-focus refetches from clobbering unsaved auto-save edits.
   useEffect(() => {
-    if (!user) return;
-    (async () => {
-      const [{ data: planRow }, { data: logsData }] = await Promise.all([
-        supabase.from("plans").select("id,parsed").eq("owner_user_id", user.id).eq("is_active", true).maybeSingle(),
-        supabase.from("workout_logs").select("week_number,day_key,data,status").eq("owner_user_id", user.id).eq("status", "done").order("log_date", { ascending: false }),
-      ]);
-      setPlan((planRow?.parsed as unknown as ParsedPlan) ?? null);
-      setPlanDbId(planRow?.id ?? null);
-      const map = new Map<string, LogRow[]>();
-      for (const l of ((logsData ?? []) as unknown as LogRow[])) {
-        const key = (l.day_key ?? "").split("—")[0].trim();
-        if (!key) continue;
-        const arr = map.get(key) ?? [];
-        arr.push(l);
-        map.set(key, arr);
-      }
-      setLogsByDay(map);
-      setLoading(false);
-    })();
-  }, [user]);
+    if (planDbId) return;
+    if (planQ.data) {
+      setPlan(planQ.data.parsed);
+      setPlanDbId(planQ.data.id);
+    }
+  }, [planQ.data, planDbId]);
+
+  const logsByDay = useMemo(() => {
+    const map = new Map<string, LogRow[]>();
+    for (const l of logsQ.data ?? []) {
+      const key = (l.day_key ?? "").split("—")[0].trim();
+      if (!key) continue;
+      const arr = map.get(key) ?? [];
+      arr.push(l);
+      map.set(key, arr);
+    }
+    return map;
+  }, [logsQ.data]);
+
+  const loading = planQ.isLoading || logsQ.isLoading;
+  const loadError = planQ.isError || logsQ.isError;
 
   // Debounced auto-save in edit mode.
   const dirtyRef = useRef(false);
@@ -152,6 +154,18 @@ export default function Plan() {
 
   if (loading) {
     return (<><TopBar title="Plan" /><main className="p-8 text-xs uppercase tracking-[0.16em] text-muted-foreground">Loading…</main></>);
+  }
+
+  if (loadError) {
+    return (
+      <>
+        <TopBar title="Plan" />
+        <main className="mx-auto max-w-3xl px-4 pb-24 pt-6 safe-bottom">
+          <EchoHeadline className="text-[2rem] sm:text-[2.5rem]">Plan unavailable</EchoHeadline>
+          <p className="mt-3 text-xs text-destructive">Failed to load your plan. Try again later.</p>
+        </main>
+      </>
+    );
   }
 
   if (!plan) {
