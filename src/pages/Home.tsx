@@ -449,8 +449,8 @@ function DayRail(props: {
                 )}
               >
                 <div className="font-display text-base tracking-[-0.04em] truncate">{d.type}</div>
-                <div className={cn("text-[0.6rem] uppercase tracking-[0.14em] mt-1", isActive ? "text-background/70" : "text-muted-foreground")}>
-                  {d.dayName.slice(0, 3)}{isToday ? " · today" : ""}
+                <div className={cn("text-[0.6rem] uppercase tracking-[0.14em] mt-1", isActive ? "text-background/70" : "text-muted-foreground")} aria-hidden>
+                  {isToday ? "today" : "\u00A0"}
                 </div>
               </button>
             );
@@ -461,7 +461,7 @@ function DayRail(props: {
       {active && (
         <div className="mt-3 border hairline p-5 animate-fade-in">
           <h2 className="font-display text-3xl tracking-[-0.04em]">{active.type}</h2>
-          <div className="mt-1 text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground">{active.dayName}</div>
+          <div className="mt-1 text-[0.65rem] uppercase tracking-[0.16em] text-muted-foreground" aria-hidden>&nbsp;</div>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span>{active.exercises.length} movements</span>
             {lastByDay.get(active.dayName) && (
