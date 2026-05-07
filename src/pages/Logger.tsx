@@ -208,6 +208,7 @@ export default function Logger() {
     }
     setSavedTick((n) => n + 1);
     if (showToast) toast.success("Saved");
+    qc.invalidateQueries({ queryKey: ["logs"] });
   }
 
   // Session controls
@@ -232,6 +233,7 @@ export default function Logger() {
       const { error } = await supabase.from("workout_logs").delete().eq("id", logId);
       if (error) { toast.error("Delete failed"); return; }
     }
+    qc.invalidateQueries({ queryKey: ["logs"] });
     toast.success("Session deleted");
     nav("/");
   }
