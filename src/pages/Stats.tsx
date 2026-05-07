@@ -4,15 +4,12 @@
  *  - Sessions/week + total time
  *  - Plan adherence %
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
-import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
-import type { LogDocument } from "@/lib/types";
-
-type LogRow = { id: string; log_date: string; status: string; total_seconds: number | null; data: LogDocument };
+import { useStatsLogs } from "@/hooks/queries";
 
 /** Brzycki 1RM — more aggressive than Epley at moderate reps. Falls back to Epley above 36 reps. */
 function brzycki(weight: number, reps: number) {
@@ -30,16 +27,7 @@ function isoWeek(d: Date) {
 
 export default function Stats() {
   const { user } = useSession();
-  const [logs, setLogs] = useState<LogRow[]>([]);
-
-  useEffect(() => {
-    if (!user) return;
-    supabase.from("workout_logs")
-      .select("id,log_date,status,total_seconds,data")
-      .eq("owner_user_id", user.id)
-      .order("log_date", { ascending: true })
-      .then(({ data }) => setLogs((data as unknown as LogRow[]) ?? []));
-  }, [user]);
+  const { data: logs = [], isError } = useStatsLogs(user?.id);
 
   const { perMovement, weeklyVolume, weeklyMeta, adherence } = useMemo(() => {
     const perMovement = new Map<string, { date: string; weight: number; reps: number; e1rm: number }[]>();
@@ -84,6 +72,7 @@ export default function Stats() {
       <TopBar title="Stats" />
       <main className="mx-auto max-w-3xl px-4 pb-24 pt-6 safe-bottom">
         <EchoHeadline className="text-[2.25rem]">Stats</EchoHeadline>
+        {isError && <div className="mt-4 text-xs text-destructive">Failed to load stats.</div>}
 
         <section className="mt-6 grid grid-cols-3 gap-2">
           <Stat label="Sessions" value={String(logs.length)} />
