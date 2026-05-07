@@ -1,6 +1,7 @@
 /** Home — horizontal day rail, recent logs, quick actions. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
 import { DayPreviewDialog } from "@/components/DayPreviewDialog";
@@ -10,11 +11,8 @@ import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
 import { cn, sessionTypeFromDayKey } from "@/lib/utils";
 import { appConfig } from "@/config/app.config";
-import type { ParsedPlan, PlanDay, LogDocument } from "@/lib/types";
-
-type LogRow = { id: string; log_date: string; day_key: string | null; status: string; total_seconds: number | null; tags: string[] | null; activity_type: string | null };
-type StatsLogRow = LogRow & { data?: LogDocument };
-type PlanRow = { id: string; name: string; parsed: ParsedPlan; start_date: string | null; end_date: string | null; is_active: boolean };
+import type { PlanDay } from "@/lib/types";
+import { useActivePlan, useRecentLogs, useAllUserLogs, qk, type LogRow, type LogRowWithData as StatsLogRow, type ActivePlanRow as PlanRow } from "@/hooks/queries";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -49,58 +47,35 @@ function colorForLog(l: LogRow): string {
 export default function Home() {
   const nav = useNavigate();
   const { user } = useSession();
-  const [plan, setPlan] = useState<PlanRow | null>(null);
-  const [logs, setLogs] = useState<LogRow[]>([]);
-  const [allLogs, setAllLogs] = useState<StatsLogRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const qc = useQueryClient();
+  const planQ = useActivePlan(user?.id);
+  const recentQ = useRecentLogs(user?.id, 5);
+  const allQ = useAllUserLogs(user?.id);
+  const plan = planQ.data ?? null;
+  const logs = recentQ.data ?? [];
+  const allLogs = allQ.data ?? [];
+  const loading = planQ.isLoading || recentQ.isLoading || allQ.isLoading;
+  const loadError = planQ.isError || recentQ.isError || allQ.isError;
   const [activeDay, setActiveDay] = useState<string | null>(null);
   const [previewDay, setPreviewDay] = useState<PlanDay | null>(null);
   const [logMenuOpen, setLogMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
-    let cancelled = false;
-
-    async function fetchAll() {
-      const [{ data: planData }, { data: recentData }, { data: allLogsData }] = await Promise.all([
-        supabase.from("plans").select("id,name,parsed,start_date,end_date,is_active").eq("owner_user_id", user.id).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type,created_at").eq("owner_user_id", user.id).in("status", ["done", "in_progress"]).order("log_date", { ascending: false }).order("created_at", { ascending: false }).limit(5),
-        supabase.from("workout_logs").select("id,log_date,day_key,status,total_seconds,tags,activity_type,data,created_at").eq("owner_user_id", user.id).neq("status", "cancelled").order("log_date", { ascending: false }).order("created_at", { ascending: false }),
-      ]);
-      if (cancelled) return;
-      setPlan((planData as unknown as PlanRow) ?? null);
-      setLogs((recentData as LogRow[]) ?? []);
-      setAllLogs((allLogsData as unknown as StatsLogRow[]) ?? []);
-      setActiveDay((cur) => cur ?? DAY_NAMES[new Date().getDay()]);
-      setLoading(false);
-    }
-
-    fetchAll();
-
-    // Refetch on tab focus (returning from Logger after save)
-    function onVisible() {
-      if (document.visibilityState === "visible") fetchAll();
-    }
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", fetchAll);
-
-    // Realtime: refetch when this user's workout_logs change
+    setActiveDay((cur) => cur ?? DAY_NAMES[new Date().getDay()]);
     const channel = supabase
       .channel(`home-logs-${user.id}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "workout_logs", filter: `owner_user_id=eq.${user.id}` },
-        () => fetchAll(),
+        () => {
+          qc.invalidateQueries({ queryKey: qk.recentLogs(user.id, 5) });
+          qc.invalidateQueries({ queryKey: qk.allLogs(user.id) });
+        },
       )
       .subscribe();
-
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", fetchAll);
-      supabase.removeChannel(channel);
-    };
-  }, [user]);
+    return () => { supabase.removeChannel(channel); };
+  }, [user, qc]);
 
   const today = new Date();
   const todayDayName = DAY_NAMES[today.getDay()];
@@ -135,7 +110,7 @@ export default function Home() {
         <div className="mt-2 text-[0.7rem] uppercase tracking-[0.18em] text-muted-foreground">
           {today.toDateString()} · Week {week}
         </div>
-
+        {loadError && <div className="mt-4 text-xs text-destructive">Failed to load. Pull to refresh.</div>}
         {loading ? (
           <div className="mt-8 text-xs text-muted-foreground">Loading…</div>
         ) : !plan ? (
