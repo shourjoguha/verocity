@@ -1192,6 +1192,11 @@ function ItemRow(props: {
   onToggleItemNotation: (tag: string) => void;
   onSuperset: () => void;
   onStartRest: (seconds: number, label: string) => void;
+  onCloneForward: (setIdx: number) => void;
+  onOpenWeightWheel: (setIdx: number, current: number | null | undefined) => void;
+  rowFlashPrefix: string;
+  flashKey: string | null;
+  voiceDeniedRef: React.MutableRefObject<boolean>;
 }) {
   const { item, section, allSections, selected, onSelectToggle, onStartRest } = props;
   const lp = useLongPress(onSelectToggle, undefined);
@@ -1204,6 +1209,8 @@ function ItemRow(props: {
   const lastIsComplete = totalSets > 0 && !!item.sets[totalSets - 1].actual.completed;
   // Show ghost row when last set just completed but not all sets are bulk-complete.
   const showGhostRow = lastIsComplete && !allComplete;
+
+  const firstActiveSetIdx = item.sets.findIndex((s) => !s.actual.completed);
 
   return (
     <div className={`border-t hairline first:border-t-0 ${selected ? "bg-secondary" : ""}`}>
