@@ -166,28 +166,24 @@ export default function Stats() {
         <section className="mt-8">
           <h3 className="font-display text-lg uppercase tracking-[-0.03em]">Consistency</h3>
           <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground mt-1">Last 8 weeks · session intensity by weekday</div>
-          <div className="mt-3 flex gap-2">
-            <div className="flex flex-col gap-px text-[0.55rem] uppercase tracking-[0.12em] text-muted-foreground pt-px">
-              {DOW_LABELS.map((d) => (
-                <div key={d} className="aspect-square flex items-center justify-end pr-1 min-w-[2rem]" style={{ height: "calc((100% - 6px)/7)" }}>{d}</div>
-              ))}
-            </div>
-            <div className="flex-1 grid grid-cols-8 gap-px">
-              {Array.from({ length: 7 }).map((_, dowIdx) => (
-                heatmap.weeks.map((w, wIdx) => {
+          <div className="mt-3 grid gap-px max-w-md" style={{ gridTemplateColumns: "auto repeat(8, 1fr)" }}>
+            {DOW_LABELS.map((label, dowIdx) => (
+              <>
+                <div key={`l-${dowIdx}`} className="text-[0.55rem] uppercase tracking-[0.12em] text-muted-foreground pr-2 flex items-center justify-end" style={{ gridRow: dowIdx + 1, gridColumn: 1 }}>{label}</div>
+                {heatmap.weeks.map((w, wIdx) => {
                   const day = w.days[dowIdx];
                   const t = heatmap.tier(day.seconds);
                   return (
                     <div
-                      key={`${wIdx}-${dowIdx}`}
+                      key={`c-${wIdx}-${dowIdx}`}
                       title={`${day.date} · ${day.seconds ? fmtLong(day.seconds) : "—"}`}
                       className={cn("aspect-square border hairline", t > 0 && "bg-foreground", t > 0 && TIER_OPACITY[t])}
-                      style={{ gridRow: dowIdx + 1, gridColumn: wIdx + 1 }}
+                      style={{ gridRow: dowIdx + 1, gridColumn: wIdx + 2 }}
                     />
                   );
-                })
-              ))}
-            </div>
+                })}
+              </>
+            ))}
           </div>
         </section>
 
