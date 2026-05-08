@@ -1266,14 +1266,32 @@ function ItemRow(props: {
           </thead>
           <tbody>
             <AnimatePresence initial={false}>
-              {item.sets.map((s, i) => (
-                <SetRow key={i} idx={i} set={s} cols={cols}
-                  onChange={(m, v) => props.onSetActual(i, m, v)}
-                  onToggleComplete={() => props.onToggleComplete(i)}
-                  onRemove={() => props.onRemoveSet(i)}
-                  onStartRest={() => onStartRest(s.restAfterSeconds ?? item.restBetweenSetsSeconds, `${item.name} · set ${i + 1}`)}
-                />
-              ))}
+              {item.sets.map((s, i) => {
+                const prev = i > 0 ? item.sets[i - 1] : null;
+                const cliff =
+                  !!prev?.actual.completed && !!s.actual.completed &&
+                  typeof prev.actual.weight === "number" && typeof s.actual.weight === "number" &&
+                  prev.actual.weight === s.actual.weight &&
+                  typeof prev.actual.reps === "number" && typeof s.actual.reps === "number" &&
+                  (prev.actual.reps - s.actual.reps) > 2;
+                const flashed = props.flashKey === `${props.rowFlashPrefix}::${i}`;
+                return (
+                  <SetRow key={i} idx={i} set={s} cols={cols}
+                    item={item}
+                    isActive={i === firstActiveSetIdx}
+                    flashed={flashed}
+                    onChange={(m, v) => props.onSetActual(i, m, v)}
+                    onToggleComplete={() => props.onToggleComplete(i)}
+                    onRemove={() => props.onRemoveSet(i)}
+                    onStartRest={() => onStartRest(s.restAfterSeconds ?? item.restBetweenSetsSeconds, `${item.name} · set ${i + 1}`)}
+                    onCloneForward={() => props.onCloneForward(i)}
+                    onOpenWeightWheel={() => props.onOpenWeightWheel(i, s.actual.weight ?? null)}
+                    voiceDeniedRef={props.voiceDeniedRef}
+                    cliff={cliff}
+                    cols={cols}
+                  />
+                );
+              })}
             </AnimatePresence>
           </tbody>
         </table>
