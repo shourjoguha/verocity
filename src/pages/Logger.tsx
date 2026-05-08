@@ -26,13 +26,17 @@ import { appConfig, type Metric, type SwappableMetric } from "@/config/app.confi
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil, ArrowRightLeft } from "lucide-react";
+import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil, ArrowRightLeft, ChevronDown, Mic } from "lucide-react";
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
 import { loadMaxWeightByMovement, prefillWeightsFromMax } from "@/lib/lastPerformance";
 import { makeDayKey, nextWeekForDayKey } from "@/lib/weekPicker";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion, useMotionValue, useTransform, animate, type PanInfo } from "framer-motion";
+import { WeightWheel } from "@/components/WeightWheel";
+import { VibeCheck } from "@/components/VibeCheck";
+import { whyTag, WhyTagHost } from "@/components/WhyTagPrompt";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -81,6 +85,11 @@ export default function Logger() {
   const [restTimer, setRestTimer] = useState<{ targetSeconds: number; label: string } | null>(null);
   const [savedTick, setSavedTick] = useState(0);
   const [warmupNote, setWarmupNote] = useState<string>("");
+  const [vibeOpen, setVibeOpen] = useState(false);
+  const [weightWheel, setWeightWheel] = useState<{ sectionId: string; groupId: string; itemIdx: number; setIdx: number; current: number | null | undefined } | null>(null);
+  const [flashKey, setFlashKey] = useState<string | null>(null);
+  const hasShownVibeRef = useRef(false);
+  const voiceDeniedRef = useRef(false);
 
   const sw = useStopwatch();
 
@@ -170,9 +179,14 @@ export default function Logger() {
           if (planDay.warmup) setWarmupNote(planDay.warmup);
         }
         // Auto-start the timer for any newly-opened session (plan-driven or custom).
-        setStartedAt(new Date().toISOString());
-        setStatus("in_progress");
-        sw.start();
+        if (!hasShownVibeRef.current) {
+          hasShownVibeRef.current = true;
+          setVibeOpen(true);
+        } else {
+          setStartedAt(new Date().toISOString());
+          setStatus("in_progress");
+          sw.start();
+        }
       }
       } catch (e) {
         console.error(e);
@@ -244,6 +258,8 @@ export default function Logger() {
       destructive: true,
     });
     if (!ok) return;
+    const why = await whyTag();
+    if (why) setTags((t) => (t.includes(why) ? t : [...t, why]));
     sw.pause();
     if (logId) {
       const { error } = await supabase.from("workout_logs").delete().eq("id", logId);
@@ -269,6 +285,23 @@ export default function Logger() {
   async function finishSession() {
     sw.pause();
     const endIso = new Date().toISOString();
+    // Light-day prompt: if planned >= 4 sets and < 60% completed.
+    let extraTags: string[] = [];
+    if (doc) {
+      let plannedCount = 0, completedCount = 0;
+      for (const sec of doc.sections) for (const g of sec.groups) for (const it of g.items) {
+        for (const s of it.sets) {
+          if (s.planned) plannedCount += 1;
+          if (s.actual.completed) completedCount += 1;
+        }
+      }
+      if (plannedCount >= 4 && completedCount / plannedCount < 0.6) {
+        const why = await whyTag();
+        if (why) extraTags = [why];
+      }
+    }
+    const finalTags = extraTags.length ? Array.from(new Set([...tags, ...extraTags])) : tags;
+    if (extraTags.length) setTags(finalTags);
     setStatus("done");
     setEndedAt(endIso);
     if (!user || !doc) return;
@@ -285,7 +318,7 @@ export default function Logger() {
       data: doc as never,
       log_date: format(logDate, "yyyy-MM-dd"),
       activity_type: activityType,
-      tags,
+      tags: finalTags,
     };
     if (logId) {
       const { error } = await supabase.from("workout_logs").update(payload).eq("id", logId);
