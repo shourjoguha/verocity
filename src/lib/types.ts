@@ -91,4 +91,8 @@ export interface LogSection {
 }
 export interface LogDocument {
   sections: LogSection[];
+  /** Optional session-level metadata (additive). */
+  session?: {
+    vibe?: { sleep?: number; energy?: number; soreness?: number };
+  };
 }
