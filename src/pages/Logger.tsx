@@ -388,6 +388,39 @@ export default function Logger() {
       if (it.sets[setIdx].actual.prefilled) it.sets[setIdx].actual.prefilled = false;
     });
   }
+  /** Long-press # cell on a completed set: copy values into the next empty set. */
+  function cloneForward(sectionId: string, groupId: string, itemIdx: number, setIdx: number) {
+    let nextIdx = -1;
+    let armRest = false;
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId)!;
+      const g = s.groups.find((x) => x.id === groupId)!;
+      const it = g.items[itemIdx];
+      const src = it.sets[setIdx];
+      if (!src?.actual?.completed) return;
+      const dstIdx = it.sets.findIndex((st, i) => i > setIdx && !st.actual.completed && st.actual.weight == null && st.actual.reps == null);
+      if (dstIdx < 0) return;
+      const dst = it.sets[dstIdx];
+      const swap = (appConfig.metrics.swappable as readonly string[]).find((m) => it.metrics.includes(m as Metric)) as Metric | undefined;
+      if (typeof src.actual.weight === "number") dst.actual.weight = src.actual.weight;
+      if (swap === "reps") {
+        if (typeof src.actual.reps === "number" && dst.planned?.reps !== "max") dst.actual.reps = src.actual.reps;
+      } else if (swap && typeof src.actual[swap] === "number") {
+        dst.actual[swap] = src.actual[swap];
+      }
+      dst.actual.prefilled = true;
+      nextIdx = dstIdx;
+      armRest = true;
+    });
+    if (armRest) {
+      const item = doc?.sections.find((s) => s.id === sectionId)?.groups.find((g) => g.id === groupId)?.items[itemIdx];
+      if (item) setRestTimer({ targetSeconds: item.restBetweenSetsSeconds, label: `${item.name} · set ${nextIdx + 1}` });
+      try { navigator.vibrate?.(15); } catch { /* noop */ }
+      const fk = `${sectionId}::${groupId}::${itemIdx}::${nextIdx}`;
+      setFlashKey(fk);
+      window.setTimeout(() => setFlashKey((cur) => (cur === fk ? null : cur)), 220);
+    }
+  }
   function toggleSetComplete(sectionId: string, groupId: string, itemIdx: number, setIdx: number) {
     updateDoc((d) => {
       const s = d.sections.find((x) => x.id === sectionId)!;
