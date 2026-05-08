@@ -29,7 +29,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
-import { loadHistory, prefillFromHistory } from "@/lib/lastPerformance";
+import { loadMaxWeightByMovement, prefillWeightsFromMax } from "@/lib/lastPerformance";
 import { makeDayKey, nextWeekForDayKey } from "@/lib/weekPicker";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion, useMotionValue, useTransform, animate, type PanInfo } from "framer-motion";
@@ -122,8 +122,9 @@ export default function Logger() {
 
         if (isCustomMode) {
           const blank = buildBlankDocument();
-          const history = await loadHistory(user.id);
-          setDoc(prefillFromHistory(blank, history));
+          const maxByMov = await loadMaxWeightByMovement(user.id);
+          maxByMovRef.current = maxByMov;
+          setDoc(prefillWeightsFromMax(blank, maxByMov));
           setDayKey("Custom workout");
           setWeekNumber(0);
           setActivityType("strength");
@@ -146,8 +147,9 @@ export default function Logger() {
           const resolvedWeek = week || (await nextWeekForDayKey(user.id, dKey));
           setWeekNumber(resolvedWeek);
           const built = buildLogDocument(plan, planDay, resolvedWeek);
-          const history = await loadHistory(user.id);
-          setDoc(prefillFromHistory(built, history));
+          const maxByMov = await loadMaxWeightByMovement(user.id);
+          maxByMovRef.current = maxByMov;
+          setDoc(prefillWeightsFromMax(built, maxByMov));
           const inferred = appConfig.activity.dayTypeTag(planDay.type);
           setActivityType(inferred);
           setTags([inferred]);
