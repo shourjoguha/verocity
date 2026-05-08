@@ -1656,7 +1656,6 @@ function SetRow(props: {
   }
 
   return (
-    <>
     <motion.tr
       layout
       initial={false}
