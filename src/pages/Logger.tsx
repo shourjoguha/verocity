@@ -84,6 +84,20 @@ export default function Logger() {
 
   const sw = useStopwatch();
 
+  // Cache of all-time max weight per movement (lowercased name); populated on initial load.
+  const maxByMovRef = useRef<Map<string, number>>(new Map());
+  function seedWeightOnNewItem(item: LogItem) {
+    if (!item.metrics.includes("weight")) return;
+    const max = maxByMovRef.current.get((item.name ?? "").trim().toLowerCase());
+    if (max == null) return;
+    for (const s of item.sets) {
+      if (s.actual.weight == null) {
+        s.actual.weight = max;
+        s.actual.prefilled = true;
+      }
+    }
+  }
+
   // Initial load
   useEffect(() => {
     if (!user) return;
