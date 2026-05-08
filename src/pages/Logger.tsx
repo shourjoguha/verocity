@@ -880,6 +880,10 @@ export default function Logger() {
                         onToggleItemNotation={toggleItemNotation}
                         onSuperset={(sId, gId, i) => setSupersetPicker({ sectionId: sId, groupId: gId, itemIndex: i })}
                         onStartRest={(seconds, label) => setRestTimer({ targetSeconds: seconds, label })}
+                        onCloneForward={cloneForward}
+                        onOpenWeightWheel={(sId, gId, i, setIdx, current) => setWeightWheel({ sectionId: sId, groupId: gId, itemIdx: i, setIdx, current })}
+                        flashKey={flashKey}
+                        voiceDeniedRef={voiceDeniedRef}
                       />
                     ))}
                     <button
