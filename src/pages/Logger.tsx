@@ -970,6 +970,35 @@ export default function Logger() {
           }}
         />
       )}
+
+      <VibeCheck
+        open={vibeOpen}
+        onStart={(v) => {
+          updateDoc((d) => { d.session = { ...(d.session ?? {}), vibe: v }; });
+          setVibeOpen(false);
+          setStartedAt(new Date().toISOString());
+          setStatus("in_progress");
+          sw.start();
+        }}
+        onSkip={() => {
+          setVibeOpen(false);
+          setStartedAt(new Date().toISOString());
+          setStatus("in_progress");
+          sw.start();
+        }}
+      />
+
+      <WeightWheel
+        open={weightWheel !== null}
+        initial={weightWheel?.current}
+        onClose={() => setWeightWheel(null)}
+        onCommit={(v) => {
+          if (!weightWheel) return;
+          setActual(weightWheel.sectionId, weightWheel.groupId, weightWheel.itemIdx, weightWheel.setIdx, "weight", v);
+        }}
+      />
+
+      <WhyTagHost />
     </>
   );
 }
