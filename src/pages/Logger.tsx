@@ -1295,7 +1295,7 @@ function ItemRow(props: {
           </thead>
           <tbody>
             <AnimatePresence initial={false}>
-              {item.sets.map((s, i) => {
+              {item.sets.flatMap((s, i) => {
                 const prev = i > 0 ? item.sets[i - 1] : null;
                 const cliff =
                   !!prev?.actual.completed && !!s.actual.completed &&
@@ -1304,7 +1304,7 @@ function ItemRow(props: {
                   typeof prev.actual.reps === "number" && typeof s.actual.reps === "number" &&
                   (prev.actual.reps - s.actual.reps) > 2;
                 const flashed = props.flashKey === `${props.rowFlashPrefix}::${i}`;
-                return (
+                const rows = [
                   <SetRow key={i} idx={i} set={s} cols={cols}
                     item={item}
                     isActive={i === firstActiveSetIdx}
@@ -1316,9 +1316,19 @@ function ItemRow(props: {
                     onCloneForward={() => props.onCloneForward(i)}
                     onOpenWeightWheel={() => props.onOpenWeightWheel(i, s.actual.weight ?? null)}
                     voiceDeniedRef={props.voiceDeniedRef}
-                    cliff={cliff}
-                  />
-                );
+                    cliff={false}
+                  />,
+                ];
+                if (cliff) {
+                  rows.push(
+                    <tr key={`cliff-${i}`}>
+                      <td colSpan={cols.length + 3} className="text-muted-foreground text-[0.6rem] uppercase tracking-[0.14em] py-1 px-1">
+                        rep loss {i + 1} — extend rest or stop early?
+                      </td>
+                    </tr>
+                  );
+                }
+                return rows;
               })}
             </AnimatePresence>
           </tbody>
