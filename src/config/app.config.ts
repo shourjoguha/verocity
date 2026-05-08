@@ -150,6 +150,15 @@ export const appConfig = {
     "skill": "Secondary",
   } as Record<string, string>,
 
+  /** Movement family roll-up — groups variants under a single family for stats. */
+  movementFamilies: {
+    squat:    ["back squat", "front squat", "pause squat", "box squat", "goblet squat"],
+    bench:    ["bench press", "pause bench", "close grip bench", "incline bench"],
+    deadlift: ["deadlift", "romanian deadlift", "rdl", "deficit deadlift", "trap bar deadlift"],
+    press:    ["overhead press", "ohp", "push press", "strict press"],
+    row:      ["barbell row", "pendlay row", "chest supported row"],
+  } as Record<string, string[]>,
+
   /** Touch / mobile-PWA tunables. Single source of truth — components read from here. */
   touch: {
     minTargetPx: 44,
@@ -180,3 +189,17 @@ export type Metric = (typeof appConfig.metrics.list)[number];
 export type SwappableMetric = (typeof appConfig.metrics.swappable)[number];
 export type SectionName = (typeof appConfig.blocks.sections)[number];
 export type ActivityTag = (typeof appConfig.activity.tags)[number];
+
+/** Resolve a movement name to its family key. Falls back to the lowercased name. */
+export function familyOf(name: string): string {
+  const n = (name ?? "").trim().toLowerCase();
+  if (!n) return n;
+  const fams = appConfig.movementFamilies;
+  for (const [fam, list] of Object.entries(fams)) {
+    if (list.includes(n)) return fam;
+  }
+  for (const [fam, list] of Object.entries(fams)) {
+    if (list.some((p) => n.endsWith(p))) return fam;
+  }
+  return n;
+}

@@ -26,13 +26,17 @@ import { appConfig, type Metric, type SwappableMetric } from "@/config/app.confi
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil, ArrowRightLeft } from "lucide-react";
+import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil, ArrowRightLeft, ChevronDown, Mic } from "lucide-react";
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
 import { loadMaxWeightByMovement, prefillWeightsFromMax } from "@/lib/lastPerformance";
 import { makeDayKey, nextWeekForDayKey } from "@/lib/weekPicker";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion, useMotionValue, useTransform, animate, type PanInfo } from "framer-motion";
+import { WeightWheel } from "@/components/WeightWheel";
+import { VibeCheck } from "@/components/VibeCheck";
+import { whyTag, WhyTagHost } from "@/components/WhyTagPrompt";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -81,6 +85,11 @@ export default function Logger() {
   const [restTimer, setRestTimer] = useState<{ targetSeconds: number; label: string } | null>(null);
   const [savedTick, setSavedTick] = useState(0);
   const [warmupNote, setWarmupNote] = useState<string>("");
+  const [vibeOpen, setVibeOpen] = useState(false);
+  const [weightWheel, setWeightWheel] = useState<{ sectionId: string; groupId: string; itemIdx: number; setIdx: number; current: number | null | undefined } | null>(null);
+  const [flashKey, setFlashKey] = useState<string | null>(null);
+  const hasShownVibeRef = useRef(false);
+  const voiceDeniedRef = useRef(false);
 
   const sw = useStopwatch();
 
@@ -170,9 +179,14 @@ export default function Logger() {
           if (planDay.warmup) setWarmupNote(planDay.warmup);
         }
         // Auto-start the timer for any newly-opened session (plan-driven or custom).
-        setStartedAt(new Date().toISOString());
-        setStatus("in_progress");
-        sw.start();
+        if (!hasShownVibeRef.current) {
+          hasShownVibeRef.current = true;
+          setVibeOpen(true);
+        } else {
+          setStartedAt(new Date().toISOString());
+          setStatus("in_progress");
+          sw.start();
+        }
       }
       } catch (e) {
         console.error(e);
@@ -244,6 +258,8 @@ export default function Logger() {
       destructive: true,
     });
     if (!ok) return;
+    const why = await whyTag();
+    if (why) setTags((t) => (t.includes(why) ? t : [...t, why]));
     sw.pause();
     if (logId) {
       const { error } = await supabase.from("workout_logs").delete().eq("id", logId);
@@ -269,6 +285,23 @@ export default function Logger() {
   async function finishSession() {
     sw.pause();
     const endIso = new Date().toISOString();
+    // Light-day prompt: if planned >= 4 sets and < 60% completed.
+    let extraTags: string[] = [];
+    if (doc) {
+      let plannedCount = 0, completedCount = 0;
+      for (const sec of doc.sections) for (const g of sec.groups) for (const it of g.items) {
+        for (const s of it.sets) {
+          if (s.planned) plannedCount += 1;
+          if (s.actual.completed) completedCount += 1;
+        }
+      }
+      if (plannedCount >= 4 && completedCount / plannedCount < 0.6) {
+        const why = await whyTag();
+        if (why) extraTags = [why];
+      }
+    }
+    const finalTags = extraTags.length ? Array.from(new Set([...tags, ...extraTags])) : tags;
+    if (extraTags.length) setTags(finalTags);
     setStatus("done");
     setEndedAt(endIso);
     if (!user || !doc) return;
@@ -285,7 +318,7 @@ export default function Logger() {
       data: doc as never,
       log_date: format(logDate, "yyyy-MM-dd"),
       activity_type: activityType,
-      tags,
+      tags: finalTags,
     };
     if (logId) {
       const { error } = await supabase.from("workout_logs").update(payload).eq("id", logId);
@@ -354,6 +387,39 @@ export default function Logger() {
       // First user edit promotes prefilled values to confirmed.
       if (it.sets[setIdx].actual.prefilled) it.sets[setIdx].actual.prefilled = false;
     });
+  }
+  /** Long-press # cell on a completed set: copy values into the next empty set. */
+  function cloneForward(sectionId: string, groupId: string, itemIdx: number, setIdx: number) {
+    let nextIdx = -1;
+    let armRest = false;
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId)!;
+      const g = s.groups.find((x) => x.id === groupId)!;
+      const it = g.items[itemIdx];
+      const src = it.sets[setIdx];
+      if (!src?.actual?.completed) return;
+      const dstIdx = it.sets.findIndex((st, i) => i > setIdx && !st.actual.completed && st.actual.weight == null && st.actual.reps == null);
+      if (dstIdx < 0) return;
+      const dst = it.sets[dstIdx];
+      const swap = (appConfig.metrics.swappable as readonly string[]).find((m) => it.metrics.includes(m as Metric)) as Metric | undefined;
+      if (typeof src.actual.weight === "number") dst.actual.weight = src.actual.weight;
+      if (swap === "reps") {
+        if (typeof src.actual.reps === "number" && dst.planned?.reps !== "max") dst.actual.reps = src.actual.reps;
+      } else if (swap && typeof src.actual[swap] === "number") {
+        dst.actual[swap] = src.actual[swap];
+      }
+      dst.actual.prefilled = true;
+      nextIdx = dstIdx;
+      armRest = true;
+    });
+    if (armRest) {
+      const item = doc?.sections.find((s) => s.id === sectionId)?.groups.find((g) => g.id === groupId)?.items[itemIdx];
+      if (item) setRestTimer({ targetSeconds: item.restBetweenSetsSeconds, label: `${item.name} · set ${nextIdx + 1}` });
+      try { navigator.vibrate?.(15); } catch { /* noop */ }
+      const fk = `${sectionId}::${groupId}::${itemIdx}::${nextIdx}`;
+      setFlashKey(fk);
+      window.setTimeout(() => setFlashKey((cur) => (cur === fk ? null : cur)), 220);
+    }
   }
   function toggleSetComplete(sectionId: string, groupId: string, itemIdx: number, setIdx: number) {
     updateDoc((d) => {
@@ -814,6 +880,10 @@ export default function Logger() {
                         onToggleItemNotation={toggleItemNotation}
                         onSuperset={(sId, gId, i) => setSupersetPicker({ sectionId: sId, groupId: gId, itemIndex: i })}
                         onStartRest={(seconds, label) => setRestTimer({ targetSeconds: seconds, label })}
+                        onCloneForward={cloneForward}
+                        onOpenWeightWheel={(sId, gId, i, setIdx, current) => setWeightWheel({ sectionId: sId, groupId: gId, itemIdx: i, setIdx, current })}
+                        flashKey={flashKey}
+                        voiceDeniedRef={voiceDeniedRef}
                       />
                     ))}
                     <button
@@ -900,6 +970,35 @@ export default function Logger() {
           }}
         />
       )}
+
+      <VibeCheck
+        open={vibeOpen}
+        onStart={(v) => {
+          updateDoc((d) => { d.session = { ...(d.session ?? {}), vibe: v }; });
+          setVibeOpen(false);
+          setStartedAt(new Date().toISOString());
+          setStatus("in_progress");
+          sw.start();
+        }}
+        onSkip={() => {
+          setVibeOpen(false);
+          setStartedAt(new Date().toISOString());
+          setStatus("in_progress");
+          sw.start();
+        }}
+      />
+
+      <WeightWheel
+        open={weightWheel !== null}
+        initial={weightWheel?.current}
+        onClose={() => setWeightWheel(null)}
+        onCommit={(v) => {
+          if (!weightWheel) return;
+          setActual(weightWheel.sectionId, weightWheel.groupId, weightWheel.itemIdx, weightWheel.setIdx, "weight", v);
+        }}
+      />
+
+      <WhyTagHost />
     </>
   );
 }
@@ -1050,6 +1149,10 @@ function GroupBlock(props: {
   onToggleItemNotation: (sectionId: string, groupId: string, itemIdx: number, tag: string) => void;
   onSuperset: (sectionId: string, groupId: string, itemIdx: number) => void;
   onStartRest: (seconds: number, label: string) => void;
+  onCloneForward: (sectionId: string, groupId: string, itemIdx: number, setIdx: number) => void;
+  onOpenWeightWheel: (sectionId: string, groupId: string, itemIdx: number, setIdx: number, current: number | null | undefined) => void;
+  flashKey: string | null;
+  voiceDeniedRef: React.MutableRefObject<boolean>;
 }) {
   const { section, group, allSections } = props;
   const isGrouped = group.kind !== "single";
@@ -1085,6 +1188,11 @@ function GroupBlock(props: {
           onToggleItemNotation={(tag) => props.onToggleItemNotation(section.id, group.id, idx, tag)}
           onSuperset={() => props.onSuperset(section.id, group.id, idx)}
           onStartRest={props.onStartRest}
+          onCloneForward={(setIdx) => props.onCloneForward(section.id, group.id, idx, setIdx)}
+          onOpenWeightWheel={(setIdx, current) => props.onOpenWeightWheel(section.id, group.id, idx, setIdx, current)}
+          rowFlashPrefix={`${section.id}::${group.id}::${idx}`}
+          flashKey={props.flashKey}
+          voiceDeniedRef={props.voiceDeniedRef}
         />
       ))}
     </div>
@@ -1113,6 +1221,11 @@ function ItemRow(props: {
   onToggleItemNotation: (tag: string) => void;
   onSuperset: () => void;
   onStartRest: (seconds: number, label: string) => void;
+  onCloneForward: (setIdx: number) => void;
+  onOpenWeightWheel: (setIdx: number, current: number | null | undefined) => void;
+  rowFlashPrefix: string;
+  flashKey: string | null;
+  voiceDeniedRef: React.MutableRefObject<boolean>;
 }) {
   const { item, section, allSections, selected, onSelectToggle, onStartRest } = props;
   const lp = useLongPress(onSelectToggle, undefined);
@@ -1125,6 +1238,8 @@ function ItemRow(props: {
   const lastIsComplete = totalSets > 0 && !!item.sets[totalSets - 1].actual.completed;
   // Show ghost row when last set just completed but not all sets are bulk-complete.
   const showGhostRow = lastIsComplete && !allComplete;
+
+  const firstActiveSetIdx = item.sets.findIndex((s) => !s.actual.completed);
 
   return (
     <div className={`border-t hairline first:border-t-0 ${selected ? "bg-secondary" : ""}`}>
@@ -1180,14 +1295,41 @@ function ItemRow(props: {
           </thead>
           <tbody>
             <AnimatePresence initial={false}>
-              {item.sets.map((s, i) => (
-                <SetRow key={i} idx={i} set={s} cols={cols}
-                  onChange={(m, v) => props.onSetActual(i, m, v)}
-                  onToggleComplete={() => props.onToggleComplete(i)}
-                  onRemove={() => props.onRemoveSet(i)}
-                  onStartRest={() => onStartRest(s.restAfterSeconds ?? item.restBetweenSetsSeconds, `${item.name} · set ${i + 1}`)}
-                />
-              ))}
+              {item.sets.flatMap((s, i) => {
+                const prev = i > 0 ? item.sets[i - 1] : null;
+                const cliff =
+                  !!prev?.actual.completed && !!s.actual.completed &&
+                  typeof prev.actual.weight === "number" && typeof s.actual.weight === "number" &&
+                  prev.actual.weight === s.actual.weight &&
+                  typeof prev.actual.reps === "number" && typeof s.actual.reps === "number" &&
+                  (prev.actual.reps - s.actual.reps) > 2;
+                const flashed = props.flashKey === `${props.rowFlashPrefix}::${i}`;
+                const rows = [
+                  <SetRow key={i} idx={i} set={s} cols={cols}
+                    item={item}
+                    isActive={i === firstActiveSetIdx}
+                    flashed={flashed}
+                    onChange={(m, v) => props.onSetActual(i, m, v)}
+                    onToggleComplete={() => props.onToggleComplete(i)}
+                    onRemove={() => props.onRemoveSet(i)}
+                    onStartRest={() => onStartRest(s.restAfterSeconds ?? item.restBetweenSetsSeconds, `${item.name} · set ${i + 1}`)}
+                    onCloneForward={() => props.onCloneForward(i)}
+                    onOpenWeightWheel={() => props.onOpenWeightWheel(i, s.actual.weight ?? null)}
+                    voiceDeniedRef={props.voiceDeniedRef}
+                    cliff={false}
+                  />,
+                ];
+                if (cliff) {
+                  rows.push(
+                    <tr key={`cliff-${i}`}>
+                      <td colSpan={cols.length + 3} className="text-muted-foreground text-[0.6rem] uppercase tracking-[0.14em] py-1 px-1">
+                        rep loss {i + 1} — extend rest or stop early?
+                      </td>
+                    </tr>
+                  );
+                }
+                return rows;
+              })}
             </AnimatePresence>
           </tbody>
         </table>
@@ -1439,10 +1581,17 @@ function SetRow(props: {
   idx: number;
   set: LogSet;
   cols: Metric[];
+  item: LogItem;
+  isActive: boolean;
+  flashed: boolean;
   onChange: (m: Metric, v: number | null) => void;
   onToggleComplete: () => void;
   onRemove: () => void;
   onStartRest: () => void;
+  onCloneForward: () => void;
+  onOpenWeightWheel: () => void;
+  voiceDeniedRef: React.MutableRefObject<boolean>;
+  cliff?: boolean;
 }) {
   const { idx, set, cols } = props;
   const REVEAL = appConfig.touch.swipe.revealPx;
@@ -1454,6 +1603,8 @@ function SetRow(props: {
   const actionOpacity = useTransform(x, [-REVEAL, -REVEAL_SNAP, 0], [1, 0.6, 0]);
   const labelOpacity = useTransform(x, [-REVEAL, -REVEAL * 0.85], [1, 0]);
   const spring = { type: "spring" as const, stiffness: 500, damping: 40 };
+  const voice = useVoiceInput();
+  const cloneLp = useLongPress(props.onCloneForward, undefined);
 
   function onDragEnd(_: PointerEvent | MouseEvent | TouchEvent, info: PanInfo) {
     const ox = info.offset.x;
@@ -1477,6 +1628,33 @@ function SetRow(props: {
     props.onRemove();
   }
 
+  async function handleVoice() {
+    if (props.voiceDeniedRef.current) return;
+    try {
+      const text = await voice.start();
+      const m = text.match(/(\d+(?:\.\d+)?)\s*(?:by|x|×|at)\s*(\d+)/i);
+      const isAmrap = props.set.planned?.reps === "max";
+      if (m) {
+        const w = Number(m[1]);
+        const r = Number(m[2]);
+        if (props.cols.includes("weight")) props.onChange("weight", w);
+        if (props.cols.includes("reps") && !isAmrap) props.onChange("reps", r);
+      } else if (isAmrap) {
+        const m2 = text.match(/(\d+)/);
+        if (m2) props.onChange("reps", Number(m2[1]));
+        else { toast(`Couldn't catch that — try "120 by 5"`); return; }
+      } else {
+        toast(`Couldn't catch that — try "120 by 5"`);
+      }
+    } catch (e) {
+      const err = (e as Error).message;
+      if (err === "not-allowed") {
+        props.voiceDeniedRef.current = true;
+        toast.error("Microphone permission denied");
+      }
+    }
+  }
+
   return (
     <motion.tr
       layout
@@ -1484,22 +1662,49 @@ function SetRow(props: {
       exit={{ opacity: 0, x: -400, transition: { duration: 0.22, ease: [0.4, 0, 0.2, 1] } }}
       className={cn("relative swipe-row", set.actual.completed && "opacity-60")}
       style={{ x }}
+      animate={props.flashed ? { scale: [1, 1.03, 1] } : undefined}
+      transition={props.flashed ? { duration: 0.2 } : undefined}
       drag="x"
       dragConstraints={{ left: -REVEAL, right: 0 }}
       dragElastic={{ left: 0.4, right: 0 }}
       dragMomentum={false}
       onDragEnd={onDragEnd}
     >
-      <td className="font-mono text-xs">{idx + 1}</td>
+      <td
+        className="font-mono text-xs select-none cursor-pointer"
+        title={set.actual.completed ? "Long-press to copy forward" : undefined}
+        {...(set.actual.completed ? cloneLp : {})}
+      >
+        <span className="inline-flex items-center gap-0.5">
+          {idx + 1}
+          {set.actual.completed && <ChevronDown className="h-3 w-3 opacity-30" />}
+        </span>
+      </td>
       {cols.map((m) => {
         const step = m === "rpe" || m === "weight" ? 0.5 : 1;
+        if (m === "weight") {
+          return (
+            <td key={m} className="text-right">
+              <button
+                onClick={props.onOpenWeightWheel}
+                className={cn(
+                  "w-16 text-right bg-transparent border-b hairline hover:border-foreground transition-colors duration-slow ease-swiss font-mono py-1 inline-block",
+                  set.actual.prefilled && "italic text-muted-foreground",
+                )}
+                aria-label="Set weight"
+              >
+                {typeof set.actual.weight === "number" ? (set.actual.weight % 1 === 0 ? set.actual.weight.toFixed(0) : set.actual.weight.toFixed(1)) : "0"}
+              </button>
+            </td>
+          );
+        }
         return (
           <td key={m} className="text-right">
             <StepperInput
               value={set.actual[m] as number | null | undefined}
               step={step}
               prefilled={set.actual.prefilled}
-              placeholder={m === "weight" ? "0" : "—"}
+              placeholder="—"
               clamp={m === "rpe" ? { min: appConfig.rpe.min, max: appConfig.rpe.max } : { min: 0 }}
               onChange={(v) => props.onChange(m, v)}
             />
@@ -1507,13 +1712,27 @@ function SetRow(props: {
         );
       })}
       <td className="text-right">
-        <button
-          onClick={props.onStartRest}
-          className="text-[0.6rem] uppercase tracking-[0.12em] border hairline px-1.5 py-0.5 hover:bg-secondary transition-colors duration-slow ease-swiss"
-          title="Start rest"
-        >
-          rest
-        </button>
+        <div className="flex items-center justify-end gap-1">
+          {props.isActive && voice.supported && !props.voiceDeniedRef.current && (
+            <motion.button
+              onClick={handleVoice}
+              className="text-muted-foreground hover:text-foreground"
+              animate={voice.listening ? { scale: [1, 1.15, 1] } : undefined}
+              transition={voice.listening ? { repeat: Infinity, duration: 1 } : undefined}
+              aria-label="Voice input"
+              title='Say "120 by 5"'
+            >
+              <Mic className="h-3.5 w-3.5" />
+            </motion.button>
+          )}
+          <button
+            onClick={props.onStartRest}
+            className="text-[0.6rem] uppercase tracking-[0.12em] border hairline px-1.5 py-0.5 hover:bg-secondary transition-colors duration-slow ease-swiss"
+            title="Start rest"
+          >
+            rest
+          </button>
+        </div>
       </td>
       <td className="text-right relative">
         <button

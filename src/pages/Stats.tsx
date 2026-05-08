@@ -4,12 +4,14 @@
  *  - Sessions/week + total time
  *  - Plan adherence %
  */
-import { useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
 import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
 import { useStatsLogs } from "@/hooks/queries";
+import { familyOf } from "@/config/app.config";
+import { cn } from "@/lib/utils";
 
 /** Brzycki 1RM — more aggressive than Epley at moderate reps. Falls back to Epley above 36 reps. */
 function brzycki(weight: number, reps: number) {
@@ -28,6 +30,7 @@ function isoWeek(d: Date) {
 export default function Stats() {
   const { user } = useSession();
   const { data: logs = [], isError } = useStatsLogs(user?.id);
+  const [groupBy, setGroupBy] = useState<"movement" | "family">("family");
 
   const { perMovement, weeklyVolume, weeklyMeta, adherence } = useMemo(() => {
     const perMovement = new Map<string, { date: string; weight: number; reps: number; e1rm: number }[]>();
@@ -64,8 +67,66 @@ export default function Stats() {
     return { perMovement, weeklyVolume, weeklyMeta, adherence };
   }, [logs]);
 
-  const sortedMovements = Array.from(perMovement.entries()).sort((a, b) => b[1].length - a[1].length).slice(0, 8);
+  const groupedMovements = useMemo(() => {
+    if (groupBy === "movement") return perMovement;
+    const out = new Map<string, { date: string; weight: number; reps: number; e1rm: number }[]>();
+    for (const [name, arr] of perMovement.entries()) {
+      const key = familyOf(name);
+      const cap = key.charAt(0).toUpperCase() + key.slice(1);
+      const merged = out.get(cap) ?? [];
+      merged.push(...arr);
+      out.set(cap, merged);
+    }
+    for (const arr of out.values()) arr.sort((a, b) => a.date.localeCompare(b.date));
+    return out;
+  }, [perMovement, groupBy]);
+  const sortedMovements = Array.from(groupedMovements.entries()).sort((a, b) => b[1].length - a[1].length).slice(0, 8);
   const weeks = Array.from(new Set([...weeklyVolume.keys(), ...weeklyMeta.keys()])).sort();
+
+  // Day-of-week consistency heatmap: 7 rows (Mon..Sun) x 8 cols (last 8 ISO weeks).
+  const heatmap = useMemo(() => {
+    const totalsByDate = new Map<string, number>();
+    for (const l of logs) {
+      const prev = totalsByDate.get(l.log_date) ?? 0;
+      totalsByDate.set(l.log_date, Math.max(prev, l.total_seconds ?? 0));
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    // Find Monday of current week
+    const dow = (today.getDay() + 6) % 7; // 0=Mon
+    const thisMonday = new Date(today);
+    thisMonday.setDate(today.getDate() - dow);
+    const weeks: { weekStart: Date; days: { date: string; seconds: number }[] }[] = [];
+    for (let w = 7; w >= 0; w--) {
+      const start = new Date(thisMonday);
+      start.setDate(thisMonday.getDate() - w * 7);
+      const days: { date: string; seconds: number }[] = [];
+      for (let d = 0; d < 7; d++) {
+        const dt = new Date(start);
+        dt.setDate(start.getDate() + d);
+        const iso = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+        days.push({ date: iso, seconds: totalsByDate.get(iso) ?? 0 });
+      }
+      weeks.push({ weekStart: start, days });
+    }
+    // Tier thresholds (seconds): empty → no fill; else 5 tiers by quintile of non-zero values.
+    const nonZero: number[] = [];
+    for (const w of weeks) for (const d of w.days) if (d.seconds > 0) nonZero.push(d.seconds);
+    nonZero.sort((a, b) => a - b);
+    function tier(sec: number): number {
+      if (sec <= 0 || nonZero.length === 0) return 0;
+      const qIdx = nonZero.findIndex((v) => v >= sec);
+      const pct = qIdx < 0 ? 1 : (qIdx + 1) / nonZero.length;
+      if (pct <= 0.2) return 1;
+      if (pct <= 0.4) return 2;
+      if (pct <= 0.6) return 3;
+      if (pct <= 0.8) return 4;
+      return 5;
+    }
+    return { weeks, tier };
+  }, [logs]);
+  const TIER_OPACITY = ["", "opacity-20", "opacity-40", "opacity-60", "opacity-80", "opacity-100"];
+  const DOW_LABELS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
   return (
     <>
@@ -103,7 +164,47 @@ export default function Stats() {
         </section>
 
         <section className="mt-8">
-          <h3 className="font-display text-lg uppercase tracking-[-0.03em]">Top movements (e1RM trend)</h3>
+          <h3 className="font-display text-lg uppercase tracking-[-0.03em]">Consistency</h3>
+          <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground mt-1">Last 8 weeks · session intensity by weekday</div>
+          <div className="mt-3 grid gap-px max-w-md" style={{ gridTemplateColumns: "auto repeat(8, 1fr)" }}>
+            {DOW_LABELS.map((label, dowIdx) => (
+              <Fragment key={`row-${dowIdx}`}>
+                <div className="text-[0.55rem] uppercase tracking-[0.12em] text-muted-foreground pr-2 flex items-center justify-end" style={{ gridRow: dowIdx + 1, gridColumn: 1 }}>{label}</div>
+                {heatmap.weeks.map((w, wIdx) => {
+                  const day = w.days[dowIdx];
+                  const t = heatmap.tier(day.seconds);
+                  return (
+                    <div
+                      key={`c-${wIdx}-${dowIdx}`}
+                      title={`${day.date} · ${day.seconds ? fmtLong(day.seconds) : "—"}`}
+                      className={cn("aspect-square border hairline", t > 0 && "bg-foreground", t > 0 && TIER_OPACITY[t])}
+                      style={{ gridRow: dowIdx + 1, gridColumn: wIdx + 2 }}
+                    />
+                  );
+                })}
+              </Fragment>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-8">
+          <div className="flex items-baseline justify-between">
+            <h3 className="font-display text-lg uppercase tracking-[-0.03em]">Top movements (e1RM trend)</h3>
+            <div className="flex items-center gap-1">
+              {(["family","movement"] as const).map((g) => (
+                <button
+                  key={g}
+                  onClick={() => setGroupBy(g)}
+                  className={cn(
+                    "text-[0.6rem] uppercase tracking-[0.12em] px-2 py-1 border transition-colors",
+                    groupBy === g ? "bg-foreground text-background border-foreground" : "hairline hover:bg-secondary",
+                  )}
+                >
+                  By {g}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="mt-3 grid sm:grid-cols-2 gap-3">
             {sortedMovements.map(([name, points]) => {
               const max = Math.max(...points.map((p) => p.e1rm));
