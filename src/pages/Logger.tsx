@@ -1288,7 +1288,6 @@ function ItemRow(props: {
                     onOpenWeightWheel={() => props.onOpenWeightWheel(i, s.actual.weight ?? null)}
                     voiceDeniedRef={props.voiceDeniedRef}
                     cliff={cliff}
-                    cols={cols}
                   />
                 );
               })}
