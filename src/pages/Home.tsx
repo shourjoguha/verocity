@@ -13,6 +13,7 @@ import { cn, sessionTypeFromDayKey } from "@/lib/utils";
 import { appConfig } from "@/config/app.config";
 import type { PlanDay } from "@/lib/types";
 import { useActivePlan, useRecentLogs, useAllUserLogs, qk, type LogRow, type LogRowWithData as StatsLogRow, type ActivePlanRow as PlanRow } from "@/hooks/queries";
+import { SetShapeStrip } from "@/components/SetShapeStrip";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -165,6 +166,9 @@ export default function Home() {
                       <div className="flex-1 min-w-0">
                         <div className="font-display text-base tracking-[-0.03em] truncate">{sessionTypeFromDayKey(l.day_key)}</div>
                         <div className="text-xs text-muted-foreground mt-0.5">{daysAgo(l.log_date)}</div>
+                        <div className="mt-1.5 overflow-hidden">
+                          <SetShapeStrip data={l.data} color={color} height={24} />
+                        </div>
                       </div>
                       <span className="text-xs font-mono text-muted-foreground shrink-0">{l.total_seconds ? fmtLong(l.total_seconds) : "—"}</span>
                     </div>

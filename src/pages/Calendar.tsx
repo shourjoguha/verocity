@@ -13,6 +13,7 @@ import { appConfig } from "@/config/app.config";
 import { AddSessionMenu } from "@/components/AddSessionMenu";
 import { sessionTypeFromDayKey } from "@/lib/utils";
 import { useMonthLogs, type CalendarLogRow as LogRow } from "@/hooks/queries";
+import { SetShapeStrip } from "@/components/SetShapeStrip";
 
 function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function endOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
@@ -86,16 +87,32 @@ export default function Calendar() {
                 <div className="text-[0.65rem] font-mono text-muted-foreground">{c.date.getDate()}</div>
                 {todays.length > 0 && (
                   <div className="absolute inset-x-0.5 bottom-0.5 flex flex-col gap-0.5">
-                    {todays.slice(0, 4).map((l) => (
-                      <button
-                        key={l.id}
-                        onClick={(e) => { e.stopPropagation(); nav(`/log/${l.id}`); }}
-                        className="h-1.5 w-full hover:opacity-80 transition-opacity"
-                        style={{ background: colorForLog(l) }}
-                        aria-label={sessionTypeFromDayKey(l.day_key)}
-                        title={sessionTypeFromDayKey(l.day_key)}
-                      />
-                    ))}
+                    {todays.slice(0, 4).map((l) => {
+                      const color = colorForLog(l);
+                      if (l.status === "done" && l.data) {
+                        return (
+                          <button
+                            key={l.id}
+                            onClick={(e) => { e.stopPropagation(); nav(`/log/${l.id}`); }}
+                            className="w-full hover:opacity-80 transition-opacity overflow-hidden"
+                            aria-label={sessionTypeFromDayKey(l.day_key)}
+                            title={sessionTypeFromDayKey(l.day_key)}
+                          >
+                            <SetShapeStrip data={l.data} color={color} height={6} />
+                          </button>
+                        );
+                      }
+                      return (
+                        <button
+                          key={l.id}
+                          onClick={(e) => { e.stopPropagation(); nav(`/log/${l.id}`); }}
+                          className="h-1.5 w-full hover:opacity-80 transition-opacity"
+                          style={{ background: color }}
+                          aria-label={sessionTypeFromDayKey(l.day_key)}
+                          title={sessionTypeFromDayKey(l.day_key)}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </div>
