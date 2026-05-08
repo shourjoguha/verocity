@@ -1542,10 +1542,17 @@ function SetRow(props: {
   idx: number;
   set: LogSet;
   cols: Metric[];
+  item: LogItem;
+  isActive: boolean;
+  flashed: boolean;
   onChange: (m: Metric, v: number | null) => void;
   onToggleComplete: () => void;
   onRemove: () => void;
   onStartRest: () => void;
+  onCloneForward: () => void;
+  onOpenWeightWheel: () => void;
+  voiceDeniedRef: React.MutableRefObject<boolean>;
+  cliff: boolean;
 }) {
   const { idx, set, cols } = props;
   const REVEAL = appConfig.touch.swipe.revealPx;
@@ -1557,6 +1564,8 @@ function SetRow(props: {
   const actionOpacity = useTransform(x, [-REVEAL, -REVEAL_SNAP, 0], [1, 0.6, 0]);
   const labelOpacity = useTransform(x, [-REVEAL, -REVEAL * 0.85], [1, 0]);
   const spring = { type: "spring" as const, stiffness: 500, damping: 40 };
+  const voice = useVoiceInput();
+  const cloneLp = useLongPress(props.onCloneForward, undefined);
 
   function onDragEnd(_: PointerEvent | MouseEvent | TouchEvent, info: PanInfo) {
     const ox = info.offset.x;
@@ -1580,22 +1589,77 @@ function SetRow(props: {
     props.onRemove();
   }
 
+  async function handleVoice() {
+    if (props.voiceDeniedRef.current) return;
+    try {
+      const text = await voice.start();
+      const m = text.match(/(\d+(?:\.\d+)?)\s*(?:by|x|×|at)\s*(\d+)/i);
+      const isAmrap = props.set.planned?.reps === "max";
+      if (m) {
+        const w = Number(m[1]);
+        const r = Number(m[2]);
+        if (props.cols.includes("weight")) props.onChange("weight", w);
+        if (props.cols.includes("reps") && !isAmrap) props.onChange("reps", r);
+      } else if (isAmrap) {
+        const m2 = text.match(/(\d+)/);
+        if (m2) props.onChange("reps", Number(m2[1]));
+        else { toast(`Couldn't catch that — try "120 by 5"`); return; }
+      } else {
+        toast(`Couldn't catch that — try "120 by 5"`);
+      }
+    } catch (e) {
+      const err = (e as Error).message;
+      if (err === "not-allowed") {
+        props.voiceDeniedRef.current = true;
+        toast.error("Microphone permission denied");
+      }
+    }
+  }
+
   return (
+    <>
     <motion.tr
       layout
       initial={false}
       exit={{ opacity: 0, x: -400, transition: { duration: 0.22, ease: [0.4, 0, 0.2, 1] } }}
       className={cn("relative swipe-row", set.actual.completed && "opacity-60")}
       style={{ x }}
+      animate={props.flashed ? { scale: [1, 1.03, 1] } : undefined}
+      transition={props.flashed ? { duration: 0.2 } : undefined}
       drag="x"
       dragConstraints={{ left: -REVEAL, right: 0 }}
       dragElastic={{ left: 0.4, right: 0 }}
       dragMomentum={false}
       onDragEnd={onDragEnd}
     >
-      <td className="font-mono text-xs">{idx + 1}</td>
+      <td
+        className="font-mono text-xs select-none cursor-pointer"
+        title={set.actual.completed ? "Long-press to copy forward" : undefined}
+        {...(set.actual.completed ? cloneLp : {})}
+      >
+        <span className="inline-flex items-center gap-0.5">
+          {idx + 1}
+          {set.actual.completed && <ChevronDown className="h-3 w-3 opacity-30" />}
+        </span>
+      </td>
       {cols.map((m) => {
         const step = m === "rpe" || m === "weight" ? 0.5 : 1;
+        if (m === "weight") {
+          return (
+            <td key={m} className="text-right">
+              <button
+                onClick={props.onOpenWeightWheel}
+                className={cn(
+                  "w-16 text-right bg-transparent border-b hairline hover:border-foreground transition-colors duration-slow ease-swiss font-mono py-1 inline-block",
+                  set.actual.prefilled && "italic text-muted-foreground",
+                )}
+                aria-label="Set weight"
+              >
+                {typeof set.actual.weight === "number" ? (set.actual.weight % 1 === 0 ? set.actual.weight.toFixed(0) : set.actual.weight.toFixed(1)) : "0"}
+              </button>
+            </td>
+          );
+        }
         return (
           <td key={m} className="text-right">
             <StepperInput
@@ -1610,13 +1674,27 @@ function SetRow(props: {
         );
       })}
       <td className="text-right">
-        <button
-          onClick={props.onStartRest}
-          className="text-[0.6rem] uppercase tracking-[0.12em] border hairline px-1.5 py-0.5 hover:bg-secondary transition-colors duration-slow ease-swiss"
-          title="Start rest"
-        >
-          rest
-        </button>
+        <div className="flex items-center justify-end gap-1">
+          {props.isActive && voice.supported && !props.voiceDeniedRef.current && (
+            <motion.button
+              onClick={handleVoice}
+              className="text-muted-foreground hover:text-foreground"
+              animate={voice.listening ? { scale: [1, 1.15, 1] } : undefined}
+              transition={voice.listening ? { repeat: Infinity, duration: 1 } : undefined}
+              aria-label="Voice input"
+              title='Say "120 by 5"'
+            >
+              <Mic className="h-3.5 w-3.5" />
+            </motion.button>
+          )}
+          <button
+            onClick={props.onStartRest}
+            className="text-[0.6rem] uppercase tracking-[0.12em] border hairline px-1.5 py-0.5 hover:bg-secondary transition-colors duration-slow ease-swiss"
+            title="Start rest"
+          >
+            rest
+          </button>
+        </div>
       </td>
       <td className="text-right relative">
         <button
@@ -1647,6 +1725,14 @@ function SetRow(props: {
         </motion.div>
       </td>
     </motion.tr>
+    {props.cliff && (
+      <tr>
+        <td colSpan={cols.length + 3} className="text-muted-foreground text-[0.6rem] uppercase tracking-[0.14em] py-1 px-1">
+          rep loss {idx + 1} — extend rest or stop early?
+        </td>
+      </tr>
+    )}
+    </>
   );
 }
 
