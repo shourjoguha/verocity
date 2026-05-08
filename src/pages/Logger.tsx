@@ -1764,13 +1764,6 @@ function SetRow(props: {
         </motion.div>
       </td>
     </motion.tr>
-    {props.cliff && (
-      <tr>
-        <td colSpan={cols.length + 3} className="text-muted-foreground text-[0.6rem] uppercase tracking-[0.14em] py-1 px-1">
-          rep loss {idx + 1} — extend rest or stop early?
-        </td>
-      </tr>
-    )}
     </>
   );
 }
