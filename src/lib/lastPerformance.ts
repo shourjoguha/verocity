@@ -1,73 +1,51 @@
-/** Pre-fill set actuals from the most recent matching performance.
- *  Matches by (movement name, section name) — case-insensitive.
- *  Only fills empty actual fields; never overwrites planned values or user input. */
-import type { LogDocument, LogItem, LogSet } from "./types";
+/** Pre-fill weight from the user's all-time max for each movement (case-insensitive name match).
+ *  Reps and RPE are seeded from the prescription in logBuilder; this only handles weight. */
+import type { LogDocument } from "./types";
 import { supabase } from "@/integrations/supabase/client";
-import type { Metric } from "@/config/app.config";
 
-interface HistoryRow { data: LogDocument; log_date: string }
-
-/** Loads recent done logs for the user. */
-export async function loadHistory(userId: string, limit = 50): Promise<HistoryRow[]> {
+/** Scan user's done logs and return the max numeric actual.weight per movement name (lowercased+trimmed). */
+export async function loadMaxWeightByMovement(userId: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
   const { data } = await supabase
     .from("workout_logs")
-    .select("data,log_date")
+    .select("data")
     .eq("owner_user_id", userId)
     .eq("status", "done")
-    .order("log_date", { ascending: false })
-    .limit(limit);
-  return ((data ?? []) as unknown as HistoryRow[]);
-}
-
-/** Find best/most-recent set for a movement within a matching section name. */
-function findRecentSet(history: HistoryRow[], movementName: string, sectionName: string): LogSet | null {
-  const mn = movementName.trim().toLowerCase();
-  const sn = sectionName.trim().toLowerCase();
-  for (const row of history) {
+    .limit(500);
+  for (const row of (data ?? []) as unknown as { data: LogDocument }[]) {
     for (const sec of row.data?.sections ?? []) {
-      if ((sec.name ?? "").trim().toLowerCase() !== sn) continue;
-      for (const grp of sec.groups) {
-        for (const it of grp.items) {
-          if ((it.name ?? "").trim().toLowerCase() !== mn) continue;
-          // Find best completed set; fall back to last set with weight/reps.
-          const completed = it.sets.filter((s) => s.actual.completed);
-          const candidates = completed.length ? completed : it.sets;
-          for (let i = candidates.length - 1; i >= 0; i--) {
-            const s = candidates[i];
-            if (s.actual && (s.actual.weight != null || s.actual.reps != null || s.actual.time != null || s.actual.distance != null)) {
-              return s;
+      for (const grp of sec.groups ?? []) {
+        for (const it of grp.items ?? []) {
+          const key = (it.name ?? "").trim().toLowerCase();
+          if (!key) continue;
+          for (const s of it.sets ?? []) {
+            const w = s.actual?.weight;
+            if (typeof w === "number" && isFinite(w) && w > 0) {
+              const prev = out.get(key) ?? 0;
+              if (w > prev) out.set(key, w);
             }
           }
         }
       }
     }
   }
-  return null;
+  return out;
 }
 
-const FILLABLE: Metric[] = ["weight", "reps", "rpe", "time", "distance"];
-
-/** Mutates `doc` in place; returns it for convenience. */
-export function prefillFromHistory(doc: LogDocument, history: HistoryRow[]): LogDocument {
+/** Seed actual.weight on every set of every item from the max-by-movement map.
+ *  Only fills empty weight slots; never overwrites user input. Marks set.actual.prefilled = true. */
+export function prefillWeightsFromMax(doc: LogDocument, maxByMovement: Map<string, number>): LogDocument {
   for (const sec of doc.sections) {
     for (const grp of sec.groups) {
       for (const it of grp.items) {
-        const recent = findRecentSet(history, it.name, sec.name);
-        if (!recent) continue;
+        if (!it.metrics.includes("weight")) continue;
+        const max = maxByMovement.get((it.name ?? "").trim().toLowerCase());
+        if (max == null) continue;
         for (const set of it.sets) {
-          // Skip if user already has data, or if fully completed.
-          const hasUserData = FILLABLE.some((m) => set.actual[m] != null);
-          if (hasUserData) continue;
-          let didFill = false;
-          for (const m of FILLABLE) {
-            if (!it.metrics.includes(m)) continue;
-            const v = recent.actual[m];
-            if (v == null) continue;
-            // Don't override planned numeric reps if planned has it.
-            (set.actual as Record<string, unknown>)[m] = v;
-            didFill = true;
+          if (set.actual.weight == null) {
+            set.actual.weight = max;
+            set.actual.prefilled = true;
           }
-          if (didFill) set.actual.prefilled = true;
         }
       }
     }

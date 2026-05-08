@@ -6,28 +6,29 @@ import type { ParsedPlan, PlanDay, PlannedSet } from "./types";
 let gid = 0;
 const newId = () => `g_${Date.now().toString(36)}_${(gid++).toString(36)}`;
 
-/** Seed RPE default on any set that is empty for an item that tracks RPE. */
-function seedRpeDefaults(item: LogItem) {
-  if (!item.metrics.includes("rpe")) return;
-  for (const set of item.sets) {
-    if (set.actual.rpe == null) {
-      set.actual.rpe = appConfig.rpe.default;
-      // Mark as prefilled so it renders muted/italic until user edits.
-      if (Object.keys(set.actual).filter((k) => k !== "rpe" && k !== "prefilled").length === 0) {
-        set.actual.prefilled = true;
-      }
-    }
+function plannedToLogSets(planned: PlannedSet | null, defaultRest: number, metrics: Metric[]): LogSet[] {
+  if (!planned) {
+    const actual: LogSet["actual"] = {};
+    if (metrics.includes("rpe")) { actual.rpe = appConfig.rpe.default; actual.prefilled = true; }
+    return [{ planned: null, actual, notations: [], restAfterSeconds: defaultRest }];
   }
-}
-
-function plannedToLogSets(planned: PlannedSet | null, defaultRest: number): LogSet[] {
-  if (!planned) return [{ planned: null, actual: {}, notations: [], restAfterSeconds: defaultRest }];
   const count = planned.sets ?? 1;
   const out: LogSet[] = [];
   for (let i = 0; i < count; i++) {
+    const actual: LogSet["actual"] = {};
+    let seeded = false;
+    if (metrics.includes("reps") && typeof planned.reps === "number") {
+      actual.reps = planned.reps;
+      seeded = true;
+    }
+    if (metrics.includes("rpe")) {
+      actual.rpe = planned.rpe ?? appConfig.rpe.default;
+      seeded = true;
+    }
+    if (seeded) actual.prefilled = true;
     out.push({
       planned,
-      actual: {},
+      actual,
       notations: planned.notations,
       restAfterSeconds: defaultRest,
     });
@@ -79,10 +80,9 @@ export function buildLogDocument(plan: ParsedPlan, day: PlanDay, weekNumber: num
       metrics,
       primaryMetric: primary,
       notations: planned?.notations ?? [],
-      sets: plannedToLogSets(planned, sectionRest),
+      sets: plannedToLogSets(planned, sectionRest, metrics),
       restBetweenSetsSeconds: sectionRest,
     };
-    seedRpeDefaults(item);
     const group: LogGroup = {
       id: newId(),
       kind: "single",
@@ -108,7 +108,6 @@ export function migrateDocument(doc: LogDocument): LogDocument {
         const { metrics, primary } = normalizeMetrics(it.metrics, it.primaryMetric, it.sets[0]?.planned ?? null);
         it.metrics = metrics;
         it.primaryMetric = primary;
-        seedRpeDefaults(it);
       }
     }
   }

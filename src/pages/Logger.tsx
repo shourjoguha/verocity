@@ -29,7 +29,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
-import { loadHistory, prefillFromHistory } from "@/lib/lastPerformance";
+import { loadMaxWeightByMovement, prefillWeightsFromMax } from "@/lib/lastPerformance";
 import { makeDayKey, nextWeekForDayKey } from "@/lib/weekPicker";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion, useMotionValue, useTransform, animate, type PanInfo } from "framer-motion";
@@ -84,6 +84,20 @@ export default function Logger() {
 
   const sw = useStopwatch();
 
+  // Cache of all-time max weight per movement (lowercased name); populated on initial load.
+  const maxByMovRef = useRef<Map<string, number>>(new Map());
+  function seedWeightOnNewItem(item: LogItem) {
+    if (!item.metrics.includes("weight")) return;
+    const max = maxByMovRef.current.get((item.name ?? "").trim().toLowerCase());
+    if (max == null) return;
+    for (const s of item.sets) {
+      if (s.actual.weight == null) {
+        s.actual.weight = max;
+        s.actual.prefilled = true;
+      }
+    }
+  }
+
   // Initial load
   useEffect(() => {
     if (!user) return;
@@ -122,8 +136,9 @@ export default function Logger() {
 
         if (isCustomMode) {
           const blank = buildBlankDocument();
-          const history = await loadHistory(user.id);
-          setDoc(prefillFromHistory(blank, history));
+          const maxByMov = await loadMaxWeightByMovement(user.id);
+          maxByMovRef.current = maxByMov;
+          setDoc(prefillWeightsFromMax(blank, maxByMov));
           setDayKey("Custom workout");
           setWeekNumber(0);
           setActivityType("strength");
@@ -146,8 +161,9 @@ export default function Logger() {
           const resolvedWeek = week || (await nextWeekForDayKey(user.id, dKey));
           setWeekNumber(resolvedWeek);
           const built = buildLogDocument(plan, planDay, resolvedWeek);
-          const history = await loadHistory(user.id);
-          setDoc(prefillFromHistory(built, history));
+          const maxByMov = await loadMaxWeightByMovement(user.id);
+          maxByMovRef.current = maxByMov;
+          setDoc(prefillWeightsFromMax(built, maxByMov));
           const inferred = appConfig.activity.dayTypeTag(planDay.type);
           setActivityType(inferred);
           setTags([inferred]);
@@ -445,6 +461,7 @@ export default function Logger() {
       it.metrics = Array.from(set);
       it.primaryMetric = mov.primaryMetric;
       it.restBetweenSetsSeconds = mov.default_rest_seconds || it.restBetweenSetsSeconds;
+      seedWeightOnNewItem(it);
     });
   }
   function addMovement(sectionId: string, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
@@ -456,18 +473,20 @@ export default function Logger() {
       const keep = present[0] ?? "reps";
       for (const m of SWAPPABLE) set.delete(m);
       set.add(keep);
+      const item: LogItem = {
+        movementId: mov.id,
+        name: mov.name,
+        metrics: Array.from(set),
+        primaryMetric: mov.primaryMetric,
+        notations: [],
+        sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
+        restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
+      };
+      seedWeightOnNewItem(item);
       s.groups.push({
         id: makeId(),
         kind: "single",
-        items: [{
-          movementId: mov.id,
-          name: mov.name,
-          metrics: Array.from(set),
-          primaryMetric: mov.primaryMetric,
-          notations: [],
-          sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
-          restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
-        }],
+        items: [item],
         restAfterRoundSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
       });
     });
@@ -540,7 +559,7 @@ export default function Logger() {
       const keep = present[0] ?? "reps";
       for (const m of SWAPPABLE) set.delete(m);
       set.add(keep);
-      g.items.push({
+      const item: LogItem = {
         movementId: mov.id,
         name: mov.name,
         metrics: Array.from(set),
@@ -548,7 +567,9 @@ export default function Logger() {
         notations: [],
         sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
         restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
-      });
+      };
+      seedWeightOnNewItem(item);
+      g.items.push(item);
       if (g.kind === "single") {
         g.kind = "superset";
         if (g.restWithinSeconds === undefined) g.restWithinSeconds = appConfig.timer.defaults.withinSupersetSeconds;
