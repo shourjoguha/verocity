@@ -1591,7 +1591,7 @@ function SetRow(props: {
   onCloneForward: () => void;
   onOpenWeightWheel: () => void;
   voiceDeniedRef: React.MutableRefObject<boolean>;
-  cliff: boolean;
+  cliff?: boolean;
 }) {
   const { idx, set, cols } = props;
   const REVEAL = appConfig.touch.swipe.revealPx;
