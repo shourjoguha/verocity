@@ -20,6 +20,7 @@ export type LogRow = {
   total_seconds: number | null;
   tags: string[] | null;
   activity_type: string | null;
+  data?: LogDocument;
 };
 
 export type LogRowWithData = LogRow & { data?: LogDocument };
@@ -93,14 +94,14 @@ export function useRecentLogs(userId?: string | null, limit = 5) {
     queryFn: async (): Promise<LogRow[]> => {
       const { data, error } = await supabase
         .from("workout_logs")
-        .select("id,log_date,day_key,status,total_seconds,tags,activity_type,created_at")
+        .select("id,log_date,day_key,status,total_seconds,tags,activity_type,data,created_at")
         .eq("owner_user_id", userId!)
         .in("status", ["done", "in_progress"])
         .order("log_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(limit);
       if (error) throw error;
-      return (data ?? []) as LogRow[];
+      return (data ?? []) as unknown as LogRow[];
     },
   });
 }
@@ -168,7 +169,7 @@ export function useMonthLogs(userId: string | null | undefined, monthStart: stri
     queryFn: async (): Promise<CalendarLogRow[]> => {
       const { data, error } = await supabase
         .from("workout_logs")
-        .select("id,log_date,day_key,status,total_seconds,tags,activity_type")
+        .select("id,log_date,day_key,status,total_seconds,tags,activity_type,data")
         .eq("owner_user_id", userId!)
         .neq("status", "cancelled")
         .gte("log_date", monthStart)
@@ -176,7 +177,7 @@ export function useMonthLogs(userId: string | null | undefined, monthStart: stri
         .order("log_date", { ascending: true })
         .limit(500);
       if (error) throw error;
-      return (data ?? []) as CalendarLogRow[];
+      return (data ?? []) as unknown as CalendarLogRow[];
     },
   });
 }
