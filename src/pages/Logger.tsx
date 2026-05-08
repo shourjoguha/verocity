@@ -1763,7 +1763,6 @@ function SetRow(props: {
         </motion.div>
       </td>
     </motion.tr>
-    </>
   );
 }
 
