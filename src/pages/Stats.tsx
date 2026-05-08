@@ -4,7 +4,7 @@
  *  - Sessions/week + total time
  *  - Plan adherence %
  */
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { TopBar } from "@/components/TopBar";
 import { EchoHeadline } from "@/components/EchoHeadline";
 import { useSession } from "@/lib/session";
@@ -168,8 +168,8 @@ export default function Stats() {
           <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground mt-1">Last 8 weeks · session intensity by weekday</div>
           <div className="mt-3 grid gap-px max-w-md" style={{ gridTemplateColumns: "auto repeat(8, 1fr)" }}>
             {DOW_LABELS.map((label, dowIdx) => (
-              <>
-                <div key={`l-${dowIdx}`} className="text-[0.55rem] uppercase tracking-[0.12em] text-muted-foreground pr-2 flex items-center justify-end" style={{ gridRow: dowIdx + 1, gridColumn: 1 }}>{label}</div>
+              <Fragment key={`row-${dowIdx}`}>
+                <div className="text-[0.55rem] uppercase tracking-[0.12em] text-muted-foreground pr-2 flex items-center justify-end" style={{ gridRow: dowIdx + 1, gridColumn: 1 }}>{label}</div>
                 {heatmap.weeks.map((w, wIdx) => {
                   const day = w.days[dowIdx];
                   const t = heatmap.tier(day.seconds);
@@ -182,7 +182,7 @@ export default function Stats() {
                     />
                   );
                 })}
-              </>
+              </Fragment>
             ))}
           </div>
         </section>
