@@ -1120,6 +1120,10 @@ function GroupBlock(props: {
   onToggleItemNotation: (sectionId: string, groupId: string, itemIdx: number, tag: string) => void;
   onSuperset: (sectionId: string, groupId: string, itemIdx: number) => void;
   onStartRest: (seconds: number, label: string) => void;
+  onCloneForward: (sectionId: string, groupId: string, itemIdx: number, setIdx: number) => void;
+  onOpenWeightWheel: (sectionId: string, groupId: string, itemIdx: number, setIdx: number, current: number | null | undefined) => void;
+  flashKey: string | null;
+  voiceDeniedRef: React.MutableRefObject<boolean>;
 }) {
   const { section, group, allSections } = props;
   const isGrouped = group.kind !== "single";
@@ -1155,6 +1159,11 @@ function GroupBlock(props: {
           onToggleItemNotation={(tag) => props.onToggleItemNotation(section.id, group.id, idx, tag)}
           onSuperset={() => props.onSuperset(section.id, group.id, idx)}
           onStartRest={props.onStartRest}
+          onCloneForward={(setIdx) => props.onCloneForward(section.id, group.id, idx, setIdx)}
+          onOpenWeightWheel={(setIdx, current) => props.onOpenWeightWheel(section.id, group.id, idx, setIdx, current)}
+          rowFlashPrefix={`${section.id}::${group.id}::${idx}`}
+          flashKey={props.flashKey}
+          voiceDeniedRef={props.voiceDeniedRef}
         />
       ))}
     </div>
