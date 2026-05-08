@@ -461,6 +461,7 @@ export default function Logger() {
       it.metrics = Array.from(set);
       it.primaryMetric = mov.primaryMetric;
       it.restBetweenSetsSeconds = mov.default_rest_seconds || it.restBetweenSetsSeconds;
+      seedWeightOnNewItem(it);
     });
   }
   function addMovement(sectionId: string, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
@@ -472,18 +473,20 @@ export default function Logger() {
       const keep = present[0] ?? "reps";
       for (const m of SWAPPABLE) set.delete(m);
       set.add(keep);
+      const item: LogItem = {
+        movementId: mov.id,
+        name: mov.name,
+        metrics: Array.from(set),
+        primaryMetric: mov.primaryMetric,
+        notations: [],
+        sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
+        restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
+      };
+      seedWeightOnNewItem(item);
       s.groups.push({
         id: makeId(),
         kind: "single",
-        items: [{
-          movementId: mov.id,
-          name: mov.name,
-          metrics: Array.from(set),
-          primaryMetric: mov.primaryMetric,
-          notations: [],
-          sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
-          restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
-        }],
+        items: [item],
         restAfterRoundSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
       });
     });
@@ -556,7 +559,7 @@ export default function Logger() {
       const keep = present[0] ?? "reps";
       for (const m of SWAPPABLE) set.delete(m);
       set.add(keep);
-      g.items.push({
+      const item: LogItem = {
         movementId: mov.id,
         name: mov.name,
         metrics: Array.from(set),
@@ -564,7 +567,9 @@ export default function Logger() {
         notations: [],
         sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
         restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
-      });
+      };
+      seedWeightOnNewItem(item);
+      g.items.push(item);
       if (g.kind === "single") {
         g.kind = "superset";
         if (g.restWithinSeconds === undefined) g.restWithinSeconds = appConfig.timer.defaults.withinSupersetSeconds;
