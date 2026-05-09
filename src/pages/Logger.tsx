@@ -977,6 +977,27 @@ export default function Logger() {
                         onOpenWeightWheel={(sId, gId, i, setIdx, current) => setWeightWheel({ sectionId: sId, groupId: gId, itemIdx: i, setIdx, current })}
                         flashKey={flashKey}
                         voiceDeniedRef={voiceDeniedRef}
+                        resolveSuggestion={(it) => {
+                          if (!it.movementId) return null;
+                          const sug = subsByOriginal.get(it.movementId);
+                          if (!sug) return null;
+                          if (dismissedThisSession.has(it.movementId)) return null;
+                          if (sug.replacementId === it.movementId) return null;
+                          return { replacementId: sug.replacementId, replacementName: sug.replacementName, count: sug.count };
+                        }}
+                        onApplySuggestion={(target, replId) => {
+                          const sug = movementsQ.data?.find((m) => m.id === replId);
+                          if (!sug) return;
+                          swapMovement(target, {
+                            id: sug.id,
+                            name: sug.name,
+                            metrics: (sug.default_metrics ?? ["reps"]) as Metric[],
+                            primaryMetric: ((sug.primary_metric as Metric) ?? "reps"),
+                            default_rest_seconds: sug.default_rest_seconds ?? 90,
+                          });
+                          setDismissedThisSession((p) => { const n = new Set(p); n.add(target.itemIndex.toString()); return n; });
+                        }}
+                        onDismissSuggestion={dismissSuggestion}
                       />
                     ))}
                     <button
