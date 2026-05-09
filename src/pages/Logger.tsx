@@ -30,13 +30,16 @@ import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup,
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
 import { loadMaxWeightByMovement, prefillWeightsFromMax } from "@/lib/lastPerformance";
-import { makeDayKey, nextWeekForDayKey } from "@/lib/weekPicker";
+import { makeDayKey, weekForDate } from "@/lib/weekPicker";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion, useMotionValue, useTransform, animate, type PanInfo } from "framer-motion";
 import { WeightWheel } from "@/components/WeightWheel";
 import { VibeCheck } from "@/components/VibeCheck";
 import { whyTag, WhyTagHost } from "@/components/WhyTagPrompt";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
+import { RepsStepper } from "@/components/RepsStepper";
+import { useQuery } from "@tanstack/react-query";
+import { useMovements } from "@/hooks/queries";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -72,6 +75,7 @@ export default function Logger() {
   const [dayKey, setDayKey] = useState<string>("");
   const [weekNumber, setWeekNumber] = useState<number>(1);
   const [planId, setPlanId] = useState<string | null>(null);
+  const [planStartIso, setPlanStartIso] = useState<string | null>(null);
   const [activityType, setActivityType] = useState<string>(appConfig.activity.defaultType);
   const [tags, setTags] = useState<string[]>(["strength"]);
   const [logDate, setLogDate] = useState<Date>(new Date());
@@ -92,6 +96,60 @@ export default function Logger() {
   const voiceDeniedRef = useRef(false);
 
   const sw = useStopwatch();
+
+  // Movement substitution suggestions for this (user, plan, day_key).
+  const movementsQ = useMovements(user?.id);
+  const subsQ = useQuery({
+    queryKey: ["movementSubs", user?.id, planId, dayKey],
+    enabled: !!user?.id && !!planId && !!dayKey,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("movement_subs")
+        .select("original_movement_id, replacement_movement_id, count, last_used_at, dismissed_at")
+        .eq("owner_user_id", user!.id)
+        .eq("plan_id", planId!)
+        .eq("day_key", dayKey)
+        .is("dismissed_at", null)
+        .order("count", { ascending: false })
+        .order("last_used_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  /** Map of original movement id -> top-suggestion (count >= 2 only). */
+  const subsByOriginal = useMemo(() => {
+    const m = new Map<string, { replacementId: string; count: number; replacementName: string; replacementMetrics: Metric[]; replacementPrimary: Metric; replacementRest: number }>();
+    if (!subsQ.data || !movementsQ.data) return m;
+    const movById = new Map(movementsQ.data.map((mv) => [mv.id, mv]));
+    for (const row of subsQ.data) {
+      if (m.has(row.original_movement_id)) continue; // already have top
+      if ((row.count ?? 0) < 2) continue;
+      const mv = movById.get(row.replacement_movement_id);
+      if (!mv) continue;
+      m.set(row.original_movement_id, {
+        replacementId: row.replacement_movement_id,
+        count: row.count ?? 0,
+        replacementName: mv.name,
+        replacementMetrics: (mv.default_metrics ?? ["reps"]) as Metric[],
+        replacementPrimary: ((mv.primary_metric as Metric) ?? "reps"),
+        replacementRest: mv.default_rest_seconds ?? 90,
+      });
+    }
+    return m;
+  }, [subsQ.data, movementsQ.data]);
+  const [dismissedThisSession, setDismissedThisSession] = useState<Set<string>>(new Set());
+  async function dismissSuggestion(originalId: string, replacementId: string) {
+    setDismissedThisSession((p) => { const n = new Set(p); n.add(originalId); return n; });
+    if (!user || !planId || !dayKey) return;
+    await supabase.from("movement_subs")
+      .update({ dismissed_at: new Date().toISOString() })
+      .eq("owner_user_id", user.id)
+      .eq("plan_id", planId)
+      .eq("day_key", dayKey)
+      .eq("original_movement_id", originalId)
+      .eq("replacement_movement_id", replacementId);
+    qc.invalidateQueries({ queryKey: ["movementSubs", user.id, planId, dayKey] });
+  }
 
   // Cache of all-time max weight per movement (lowercased name); populated on initial load.
   const maxByMovRef = useRef<Map<string, number>>(new Map());
@@ -137,6 +195,13 @@ export default function Logger() {
               if (planDay?.warmup) setWarmupNote(planDay.warmup);
             }
           }
+          if (data.plan_id) {
+            const { data: planRow } = await supabase.from("plans").select("start_date").eq("id", data.plan_id).maybeSingle();
+            const start = planRow?.start_date ?? null;
+            setPlanStartIso(start);
+            // Re-derive week from log_date so historical/edited rows stay correct.
+            if (start && data.log_date) setWeekNumber(weekForDate(start, data.log_date));
+          }
         }
       } else {
         // Seed log date from ?date= if present.
@@ -163,11 +228,13 @@ export default function Logger() {
             return;
           }
           const plan = (planRow.parsed as unknown as ParsedPlan);
+          setPlanStartIso(planRow.start_date ?? null);
           const planDay = plan.days.find((d) => d.dayName === day) ?? plan.days[0];
           setPlanId(planRow.id);
           const dKey = makeDayKey(planDay.dayName, planDay.type);
           setDayKey(dKey);
-          const resolvedWeek = week || (await nextWeekForDayKey(user.id, dKey));
+          const dateParam2 = search.get("date") ?? new Date().toISOString().slice(0, 10);
+          const resolvedWeek = week || weekForDate(planRow.start_date ?? null, dateParam2);
           setWeekNumber(resolvedWeek);
           const built = buildLogDocument(plan, planDay, resolvedWeek);
           const maxByMov = await loadMaxWeightByMovement(user.id);
@@ -207,6 +274,14 @@ export default function Logger() {
 
   // Sync stopwatch into accumSec
   useEffect(() => { setAccumSec(sw.seconds); }, [sw.seconds]);
+
+  // Whenever logDate or plan start changes, recompute the week from the date
+  // (planned sessions only — custom sessions keep weekNumber = 0).
+  useEffect(() => {
+    if (!planId || !planStartIso) return;
+    const iso = format(logDate, "yyyy-MM-dd");
+    setWeekNumber(weekForDate(planStartIso, iso));
+  }, [logDate, planId, planStartIso]);
 
   async function saveLog(showToast = true) {
     if (!user || !doc) return;
@@ -511,10 +586,12 @@ export default function Logger() {
     });
   }
   function swapMovement(target: { sectionId: string; groupId: string; itemIndex: number }, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
+    let originalId: string | null = null;
     updateDoc((d) => {
       const s = d.sections.find((x) => x.id === target.sectionId)!;
       const g = s.groups.find((x) => x.id === target.groupId)!;
       const it = g.items[target.itemIndex];
+      originalId = it.movementId ?? null;
       it.movementId = mov.id;
       it.name = mov.name;
       // Enforce: weight always present + only one swappable.
@@ -529,6 +606,22 @@ export default function Logger() {
       it.restBetweenSetsSeconds = mov.default_rest_seconds || it.restBetweenSetsSeconds;
       seedWeightOnNewItem(it);
     });
+    // Persist substitution memory: only for plan-driven sessions, real swaps,
+    // and only when both ids are present.
+    (async () => {
+      if (!user || !planId || !dayKey) return;
+      if (!originalId || originalId === mov.id) return;
+      try {
+        await supabase.rpc("bump_movement_sub", {
+          p_user: user.id,
+          p_plan: planId,
+          p_day_key: dayKey,
+          p_orig: originalId,
+          p_repl: mov.id,
+        });
+        qc.invalidateQueries({ queryKey: ["movementSubs", user.id, planId, dayKey] });
+      } catch (e) { console.error("bump_movement_sub failed", e); }
+    })();
   }
   function addMovement(sectionId: string, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
     updateDoc((d) => {
@@ -884,6 +977,27 @@ export default function Logger() {
                         onOpenWeightWheel={(sId, gId, i, setIdx, current) => setWeightWheel({ sectionId: sId, groupId: gId, itemIdx: i, setIdx, current })}
                         flashKey={flashKey}
                         voiceDeniedRef={voiceDeniedRef}
+                        resolveSuggestion={(it) => {
+                          if (!it.movementId) return null;
+                          const sug = subsByOriginal.get(it.movementId);
+                          if (!sug) return null;
+                          if (dismissedThisSession.has(it.movementId)) return null;
+                          if (sug.replacementId === it.movementId) return null;
+                          return { replacementId: sug.replacementId, replacementName: sug.replacementName, count: sug.count };
+                        }}
+                        onApplySuggestion={(target, replId) => {
+                          const sug = movementsQ.data?.find((m) => m.id === replId);
+                          if (!sug) return;
+                          swapMovement(target, {
+                            id: sug.id,
+                            name: sug.name,
+                            metrics: (sug.default_metrics ?? ["reps"]) as Metric[],
+                            primaryMetric: ((sug.primary_metric as Metric) ?? "reps"),
+                            default_rest_seconds: sug.default_rest_seconds ?? 90,
+                          });
+                          setDismissedThisSession((p) => { const n = new Set(p); n.add(target.itemIndex.toString()); return n; });
+                        }}
+                        onDismissSuggestion={dismissSuggestion}
                       />
                     ))}
                     <button
@@ -1153,6 +1267,9 @@ function GroupBlock(props: {
   onOpenWeightWheel: (sectionId: string, groupId: string, itemIdx: number, setIdx: number, current: number | null | undefined) => void;
   flashKey: string | null;
   voiceDeniedRef: React.MutableRefObject<boolean>;
+  resolveSuggestion: (it: LogItem) => { replacementId: string; replacementName: string; count: number } | null;
+  onApplySuggestion: (target: { sectionId: string; groupId: string; itemIndex: number }, replacementId: string) => void;
+  onDismissSuggestion: (originalId: string, replacementId: string) => void;
 }) {
   const { section, group, allSections } = props;
   const isGrouped = group.kind !== "single";
@@ -1193,6 +1310,9 @@ function GroupBlock(props: {
           rowFlashPrefix={`${section.id}::${group.id}::${idx}`}
           flashKey={props.flashKey}
           voiceDeniedRef={props.voiceDeniedRef}
+          suggestion={props.resolveSuggestion(item)}
+          onApplySuggestion={(replId) => props.onApplySuggestion({ sectionId: section.id, groupId: group.id, itemIndex: idx }, replId)}
+          onDismissSuggestion={props.onDismissSuggestion}
         />
       ))}
     </div>
@@ -1226,6 +1346,9 @@ function ItemRow(props: {
   rowFlashPrefix: string;
   flashKey: string | null;
   voiceDeniedRef: React.MutableRefObject<boolean>;
+  suggestion: { replacementId: string; replacementName: string; count: number } | null;
+  onApplySuggestion: (replacementId: string) => void;
+  onDismissSuggestion: (originalId: string, replacementId: string) => void;
 }) {
   const { item, section, allSections, selected, onSelectToggle, onStartRest } = props;
   const lp = useLongPress(onSelectToggle, undefined);
@@ -1245,7 +1368,28 @@ function ItemRow(props: {
     <div className={`border-t hairline first:border-t-0 ${selected ? "bg-secondary" : ""}`}>
       <div className="flex items-center justify-between gap-2 py-2 px-1" {...lp}>
         <div className="flex flex-col min-w-0">
-          <span className="font-display text-base tracking-[-0.03em] truncate">{item.name}</span>
+          <span className="font-display text-base tracking-[-0.03em] truncate inline-flex items-center">
+            {item.name}
+            {props.suggestion && item.movementId && (
+              <span className="inline-flex items-center ml-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); props.onApplySuggestion(props.suggestion!.replacementId); }}
+                  className="text-[0.55rem] uppercase tracking-[0.12em] border hairline px-1.5 py-0.5 inline-flex items-center gap-1 hover:bg-secondary transition-colors duration-slow ease-swiss"
+                  title="Apply suggested swap"
+                >
+                  <ArrowRightLeft className="h-3 w-3" />
+                  swap to {props.suggestion.replacementName}? · {props.suggestion.count}x
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); props.onDismissSuggestion(item.movementId!, props.suggestion!.replacementId); }}
+                  className="text-[0.55rem] uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground px-1"
+                  aria-label="Dismiss suggestion"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+          </span>
           <MovementMeta item={item} />
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -1605,6 +1749,7 @@ function SetRow(props: {
   const spring = { type: "spring" as const, stiffness: 500, damping: 40 };
   const voice = useVoiceInput();
   const cloneLp = useLongPress(props.onCloneForward, undefined);
+  const [repsOpen, setRepsOpen] = useState(false);
 
   function onDragEnd(_: PointerEvent | MouseEvent | TouchEvent, info: PanInfo) {
     const ox = info.offset.x;
@@ -1695,6 +1840,37 @@ function SetRow(props: {
               >
                 {typeof set.actual.weight === "number" ? (set.actual.weight % 1 === 0 ? set.actual.weight.toFixed(0) : set.actual.weight.toFixed(1)) : "0"}
               </button>
+            </td>
+          );
+        }
+        if (m === "reps") {
+          const isAmrap = set.planned?.reps === "max";
+          const plannedNum = typeof set.planned?.reps === "number" ? (set.planned.reps as number) : null;
+          const max = isAmrap ? Infinity : (plannedNum != null ? plannedNum + 5 : Infinity);
+          const display = typeof set.actual.reps === "number"
+            ? String(set.actual.reps)
+            : (isAmrap ? "max" : "0");
+          return (
+            <td key={m} className="text-right">
+              <RepsStepper
+                open={repsOpen}
+                onOpenChange={setRepsOpen}
+                value={typeof set.actual.reps === "number" ? set.actual.reps : null}
+                max={max}
+                onCommit={(v) => props.onChange("reps", v)}
+                trigger={
+                  <button
+                    type="button"
+                    className={cn(
+                      "w-16 text-right bg-transparent border-b hairline hover:border-foreground transition-colors duration-slow ease-swiss font-mono py-1 inline-block",
+                      set.actual.prefilled && "italic text-muted-foreground",
+                    )}
+                    aria-label="Set reps"
+                  >
+                    {display}
+                  </button>
+                }
+              />
             </td>
           );
         }

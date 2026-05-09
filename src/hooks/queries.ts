@@ -26,6 +26,7 @@ export type LogRow = {
 export type LogRowWithData = LogRow & { data?: LogDocument };
 
 export type PlanLogRow = {
+  log_date: string;
   week_number: number | null;
   day_key: string | null;
   data: LogDocument;
@@ -132,10 +133,11 @@ export function useDoneLogsForPlan(userId?: string | null) {
     queryFn: async (): Promise<PlanLogRow[]> => {
       const { data, error } = await supabase
         .from("workout_logs")
-        .select("week_number,day_key,data,status")
+        .select("log_date,week_number,day_key,data,status")
         .eq("owner_user_id", userId!)
         .eq("status", "done")
         .order("log_date", { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(500);
       if (error) throw error;
       return (data ?? []) as unknown as PlanLogRow[];

@@ -10,8 +10,9 @@ import { EchoHeadline } from "@/components/EchoHeadline";
 import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
 import { useStatsLogs } from "@/hooks/queries";
-import { familyOf } from "@/config/app.config";
+import { appConfig, familyOf } from "@/config/app.config";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** Brzycki 1RM — more aggressive than Epley at moderate reps. Falls back to Epley above 36 reps. */
 function brzycki(weight: number, reps: number) {
@@ -128,6 +129,46 @@ export default function Stats() {
   const TIER_OPACITY = ["", "opacity-20", "opacity-40", "opacity-60", "opacity-80", "opacity-100"];
   const DOW_LABELS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
+  // RPE fingerprint: per-category distribution across last 30 sessions.
+  const RPE_BINS = [5, 6, 7, 8, 9, 10] as const;
+  const CANONICAL_FAMILIES = new Set(Object.keys(appConfig.movementFamilies));
+  const rpeFingerprint = useMemo(() => {
+    const last30 = logs.slice(-30);
+    const byCat = new Map<string, number[]>(); // cat -> counts per bin
+    let totalSets = 0;
+    for (const log of last30) {
+      const doc = log.data;
+      if (!doc?.sections) continue;
+      for (const sec of doc.sections) for (const g of sec.groups) for (const it of g.items) {
+        const famKey = familyOf(it.name);
+        const cat = CANONICAL_FAMILIES.has(famKey) ? famKey : "other";
+        for (const set of it.sets) {
+          const r = set.actual.rpe;
+          if (typeof r !== "number") continue;
+          const rounded = Math.round(r);
+          const clamped = Math.max(5, Math.min(10, rounded));
+          const bins = byCat.get(cat) ?? [0, 0, 0, 0, 0, 0];
+          bins[clamped - 5] += 1;
+          byCat.set(cat, bins);
+          totalSets += 1;
+        }
+      }
+    }
+    const rows = Array.from(byCat.entries())
+      .map(([cat, bins]) => ({ cat, bins, total: bins.reduce((a, b) => a + b, 0) }))
+      .filter((r) => r.total >= 5)
+      .sort((a, b) => b.total - a.total);
+    return { rows, totalSets };
+  }, [logs]);
+  const [rpeShowAll, setRpeShowAll] = useState(false);
+  const visibleRpeRows = rpeShowAll ? rpeFingerprint.rows : rpeFingerprint.rows.slice(0, 6);
+  const hiddenRpeCount = Math.max(0, rpeFingerprint.rows.length - 6);
+  // RPE bin opacity: RPE 10 = 100%, RPE 5 = 30% (linear).
+  const rpeBinOpacity = (rpe: number) => {
+    const t = (rpe - 5) / 5; // 0..1
+    return 0.3 + t * 0.7;
+  };
+
   return (
     <>
       <TopBar title="Stats" />
@@ -185,6 +226,67 @@ export default function Stats() {
               </Fragment>
             ))}
           </div>
+        </section>
+
+        <section className="mt-8">
+          <h3 className="font-display text-lg uppercase tracking-[-0.03em]">RPE fingerprint</h3>
+          <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground mt-1">
+            Last 30 sessions · share of working sets at each RPE, by category
+          </div>
+          {visibleRpeRows.length === 0 ? (
+            <div className="mt-3 text-xs text-muted-foreground uppercase tracking-[0.12em]">
+              Log RPE on more sets to see your fingerprint.
+            </div>
+          ) : (
+            <TooltipProvider delayDuration={150}>
+              <div className="mt-3 max-w-[440px]">
+                {/* tick row */}
+                <div className="flex items-end gap-2">
+                  <div style={{ width: 80 }} />
+                  <div className="flex-1 grid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+                    {RPE_BINS.map((n) => (
+                      <div key={n} className="text-center font-mono text-[0.55rem] text-muted-foreground">{n}</div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-1 space-y-1.5">
+                  {visibleRpeRows.map(({ cat, bins, total }) => (
+                    <div key={cat} className="flex items-center gap-2">
+                      <div className="text-[0.6rem] uppercase tracking-[0.14em]" style={{ width: 80 }}>{cat}</div>
+                      <div className="flex-1 flex h-5 border hairline">
+                        {RPE_BINS.map((n, i) => {
+                          const count = bins[i];
+                          const pct = total > 0 ? (count / total) * 100 : 0;
+                          return (
+                            <Tooltip key={n}>
+                              <TooltipTrigger asChild>
+                                <div
+                                  className={cn("h-full bg-foreground border-r hairline last:border-r-0")}
+                                  style={{ width: `${100 / 6}%`, opacity: count > 0 ? rpeBinOpacity(n) : 0 }}
+                                  aria-label={`RPE ${n}: ${count} sets, ${pct.toFixed(0)}%`}
+                                />
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="text-xs">
+                                RPE {n} · {count} sets · {pct.toFixed(0)}%
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {hiddenRpeCount > 0 && (
+                  <button
+                    onClick={() => setRpeShowAll((v) => !v)}
+                    className="mt-2 text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {rpeShowAll ? "show less" : `+ ${hiddenRpeCount} more`}
+                  </button>
+                )}
+              </div>
+            </TooltipProvider>
+          )}
         </section>
 
         <section className="mt-8">

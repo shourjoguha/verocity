@@ -6,7 +6,7 @@ import { useSession } from "@/lib/session";
 import { appConfig } from "@/config/app.config";
 import { ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { loadDoneCountsByDayKey, makeDayKey, nextWeekFromMap } from "@/lib/weekPicker";
+import { loadActivePlanStart, weekForDate } from "@/lib/weekPicker";
 import { useActivePlan } from "@/hooks/queries";
 
 interface Props {
@@ -24,19 +24,17 @@ export function AddSessionMenu({ open, onClose, date }: Props) {
   const [step, setStep] = useState<Step>("root");
   const planQ = useActivePlan(user?.id);
   const plan = planQ.data?.parsed ?? null;
-  const [doneCounts, setDoneCounts] = useState<Map<string, number>>(new Map());
+  const [planStart, setPlanStart] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user || !open) return;
-    loadDoneCountsByDayKey(user.id).then(setDoneCounts).catch((e) => console.error("loadDoneCounts failed", e));
+    loadActivePlanStart(user.id).then(setPlanStart).catch((e) => console.error("loadActivePlanStart failed", e));
   }, [user, open]);
 
   useEffect(() => { if (open) setStep("root"); }, [open]);
 
   function pickPlanDay(dayName: string) {
-    const planDay = plan?.days.find((d) => d.dayName === dayName);
-    const dayKey = planDay ? makeDayKey(planDay.dayName, planDay.type) : dayName;
-    const w = nextWeekFromMap(doneCounts, dayKey);
+    const w = weekForDate(planStart, date);
     nav(`/log/new?day=${encodeURIComponent(dayName)}&week=${w}&date=${date}`);
     onClose();
   }
