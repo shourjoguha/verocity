@@ -30,7 +30,7 @@ import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup,
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
 import { loadMaxWeightByMovement, prefillWeightsFromMax } from "@/lib/lastPerformance";
-import { makeDayKey, nextWeekForDayKey } from "@/lib/weekPicker";
+import { makeDayKey, weekForDate } from "@/lib/weekPicker";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion, useMotionValue, useTransform, animate, type PanInfo } from "framer-motion";
 import { WeightWheel } from "@/components/WeightWheel";
