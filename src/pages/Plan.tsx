@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useActivePlan, useDoneLogsForPlan, type PlanLogRow as LogRow } from "@/hooks/queries";
+import { weekForDate } from "@/lib/weekPicker";
 
 const WEEKS = Array.from({ length: 16 }, (_, i) => i + 1);
 
@@ -203,7 +204,11 @@ export default function Plan() {
         <Accordion type="multiple" className="mt-6">
           {plan.days.map((day, dayIdx) => {
             const dayLogs = logsByDay.get(day.dayName) ?? [];
-            const lastWeek = dayLogs[0]?.week_number ?? null;
+            const latest = dayLogs[0];
+            const planStart = planQ.data?.start_date ?? null;
+            const lastWeek = latest && planStart
+              ? weekForDate(planStart, latest.log_date)
+              : (latest?.week_number ?? null);
             return (
               <DayAccordion
                 key={day.dayName + dayIdx}
