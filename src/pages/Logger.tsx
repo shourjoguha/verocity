@@ -1606,6 +1606,7 @@ function SetRow(props: {
   const spring = { type: "spring" as const, stiffness: 500, damping: 40 };
   const voice = useVoiceInput();
   const cloneLp = useLongPress(props.onCloneForward, undefined);
+  const [repsOpen, setRepsOpen] = useState(false);
 
   function onDragEnd(_: PointerEvent | MouseEvent | TouchEvent, info: PanInfo) {
     const ox = info.offset.x;
