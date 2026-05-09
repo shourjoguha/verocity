@@ -73,6 +73,7 @@ export default function Logger() {
   const [dayKey, setDayKey] = useState<string>("");
   const [weekNumber, setWeekNumber] = useState<number>(1);
   const [planId, setPlanId] = useState<string | null>(null);
+  const [planStartIso, setPlanStartIso] = useState<string | null>(null);
   const [activityType, setActivityType] = useState<string>(appConfig.activity.defaultType);
   const [tags, setTags] = useState<string[]>(["strength"]);
   const [logDate, setLogDate] = useState<Date>(new Date());
