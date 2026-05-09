@@ -10,7 +10,7 @@ import { EchoHeadline } from "@/components/EchoHeadline";
 import { useSession } from "@/lib/session";
 import { fmtLong } from "@/hooks/useTimer";
 import { useStatsLogs } from "@/hooks/queries";
-import { familyOf } from "@/config/app.config";
+import { appConfig, familyOf } from "@/config/app.config";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -131,7 +131,7 @@ export default function Stats() {
 
   // RPE fingerprint: per-category distribution across last 30 sessions.
   const RPE_BINS = [5, 6, 7, 8, 9, 10] as const;
-  const CANONICAL_FAMILIES = new Set(Object.keys((appConfigForFamily()).movementFamilies));
+  const CANONICAL_FAMILIES = new Set(Object.keys(appConfig.movementFamilies));
   const rpeFingerprint = useMemo(() => {
     const last30 = logs.slice(-30);
     const byCat = new Map<string, number[]>(); // cat -> counts per bin
