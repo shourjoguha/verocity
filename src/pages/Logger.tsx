@@ -1346,6 +1346,9 @@ function ItemRow(props: {
   rowFlashPrefix: string;
   flashKey: string | null;
   voiceDeniedRef: React.MutableRefObject<boolean>;
+  suggestion: { replacementId: string; replacementName: string; count: number } | null;
+  onApplySuggestion: (replacementId: string) => void;
+  onDismissSuggestion: (originalId: string, replacementId: string) => void;
 }) {
   const { item, section, allSections, selected, onSelectToggle, onStartRest } = props;
   const lp = useLongPress(onSelectToggle, undefined);
@@ -1365,7 +1368,28 @@ function ItemRow(props: {
     <div className={`border-t hairline first:border-t-0 ${selected ? "bg-secondary" : ""}`}>
       <div className="flex items-center justify-between gap-2 py-2 px-1" {...lp}>
         <div className="flex flex-col min-w-0">
-          <span className="font-display text-base tracking-[-0.03em] truncate">{item.name}</span>
+          <span className="font-display text-base tracking-[-0.03em] truncate inline-flex items-center">
+            {item.name}
+            {props.suggestion && item.movementId && (
+              <span className="inline-flex items-center ml-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); props.onApplySuggestion(props.suggestion!.replacementId); }}
+                  className="text-[0.55rem] uppercase tracking-[0.12em] border hairline px-1.5 py-0.5 inline-flex items-center gap-1 hover:bg-secondary transition-colors duration-slow ease-swiss"
+                  title="Apply suggested swap"
+                >
+                  <ArrowRightLeft className="h-3 w-3" />
+                  swap to {props.suggestion.replacementName}? · {props.suggestion.count}x
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); props.onDismissSuggestion(item.movementId!, props.suggestion!.replacementId); }}
+                  className="text-[0.55rem] uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground px-1"
+                  aria-label="Dismiss suggestion"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+          </span>
           <MovementMeta item={item} />
         </div>
         <div className="flex items-center gap-1 shrink-0">
