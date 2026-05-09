@@ -1700,6 +1700,37 @@ function SetRow(props: {
             </td>
           );
         }
+        if (m === "reps") {
+          const isAmrap = set.planned?.reps === "max";
+          const plannedNum = typeof set.planned?.reps === "number" ? (set.planned.reps as number) : null;
+          const max = isAmrap ? Infinity : (plannedNum != null ? plannedNum + 5 : Infinity);
+          const display = typeof set.actual.reps === "number"
+            ? String(set.actual.reps)
+            : (isAmrap ? "max" : "0");
+          return (
+            <td key={m} className="text-right">
+              <RepsStepper
+                open={repsOpen}
+                onOpenChange={setRepsOpen}
+                value={typeof set.actual.reps === "number" ? set.actual.reps : null}
+                max={max}
+                onCommit={(v) => props.onChange("reps", v)}
+                trigger={
+                  <button
+                    type="button"
+                    className={cn(
+                      "w-16 text-right bg-transparent border-b hairline hover:border-foreground transition-colors duration-slow ease-swiss font-mono py-1 inline-block",
+                      set.actual.prefilled && "italic text-muted-foreground",
+                    )}
+                    aria-label="Set reps"
+                  >
+                    {display}
+                  </button>
+                }
+              />
+            </td>
+          );
+        }
         return (
           <td key={m} className="text-right">
             <StepperInput
