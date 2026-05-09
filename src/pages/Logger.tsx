@@ -97,6 +97,60 @@ export default function Logger() {
 
   const sw = useStopwatch();
 
+  // Movement substitution suggestions for this (user, plan, day_key).
+  const movementsQ = useMovements(user?.id);
+  const subsQ = useQuery({
+    queryKey: ["movementSubs", user?.id, planId, dayKey],
+    enabled: !!user?.id && !!planId && !!dayKey,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("movement_subs")
+        .select("original_movement_id, replacement_movement_id, count, last_used_at, dismissed_at")
+        .eq("owner_user_id", user!.id)
+        .eq("plan_id", planId!)
+        .eq("day_key", dayKey)
+        .is("dismissed_at", null)
+        .order("count", { ascending: false })
+        .order("last_used_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  /** Map of original movement id -> top-suggestion (count >= 2 only). */
+  const subsByOriginal = useMemo(() => {
+    const m = new Map<string, { replacementId: string; count: number; replacementName: string; replacementMetrics: Metric[]; replacementPrimary: Metric; replacementRest: number }>();
+    if (!subsQ.data || !movementsQ.data) return m;
+    const movById = new Map(movementsQ.data.map((mv) => [mv.id, mv]));
+    for (const row of subsQ.data) {
+      if (m.has(row.original_movement_id)) continue; // already have top
+      if ((row.count ?? 0) < 2) continue;
+      const mv = movById.get(row.replacement_movement_id);
+      if (!mv) continue;
+      m.set(row.original_movement_id, {
+        replacementId: row.replacement_movement_id,
+        count: row.count ?? 0,
+        replacementName: mv.name,
+        replacementMetrics: (mv.default_metrics ?? ["reps"]) as Metric[],
+        replacementPrimary: ((mv.primary_metric as Metric) ?? "reps"),
+        replacementRest: mv.default_rest_seconds ?? 90,
+      });
+    }
+    return m;
+  }, [subsQ.data, movementsQ.data]);
+  const [dismissedThisSession, setDismissedThisSession] = useState<Set<string>>(new Set());
+  async function dismissSuggestion(originalId: string, replacementId: string) {
+    setDismissedThisSession((p) => { const n = new Set(p); n.add(originalId); return n; });
+    if (!user || !planId || !dayKey) return;
+    await supabase.from("movement_subs")
+      .update({ dismissed_at: new Date().toISOString() })
+      .eq("owner_user_id", user.id)
+      .eq("plan_id", planId)
+      .eq("day_key", dayKey)
+      .eq("original_movement_id", originalId)
+      .eq("replacement_movement_id", replacementId);
+    qc.invalidateQueries({ queryKey: ["movementSubs", user.id, planId, dayKey] });
+  }
+
   // Cache of all-time max weight per movement (lowercased name); populated on initial load.
   const maxByMovRef = useRef<Map<string, number>>(new Map());
   function seedWeightOnNewItem(item: LogItem) {
