@@ -1246,6 +1246,9 @@ function GroupBlock(props: {
   onOpenWeightWheel: (sectionId: string, groupId: string, itemIdx: number, setIdx: number, current: number | null | undefined) => void;
   flashKey: string | null;
   voiceDeniedRef: React.MutableRefObject<boolean>;
+  resolveSuggestion: (it: LogItem) => { replacementId: string; replacementName: string; count: number } | null;
+  onApplySuggestion: (target: { sectionId: string; groupId: string; itemIndex: number }, replacementId: string) => void;
+  onDismissSuggestion: (originalId: string, replacementId: string) => void;
 }) {
   const { section, group, allSections } = props;
   const isGrouped = group.kind !== "single";
@@ -1286,6 +1289,9 @@ function GroupBlock(props: {
           rowFlashPrefix={`${section.id}::${group.id}::${idx}`}
           flashKey={props.flashKey}
           voiceDeniedRef={props.voiceDeniedRef}
+          suggestion={props.resolveSuggestion(item)}
+          onApplySuggestion={(replId) => props.onApplySuggestion({ sectionId: section.id, groupId: group.id, itemIndex: idx }, replId)}
+          onDismissSuggestion={props.onDismissSuggestion}
         />
       ))}
     </div>
