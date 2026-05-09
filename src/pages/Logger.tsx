@@ -569,7 +569,6 @@ export default function Logger() {
       } catch (e) { console.error("bump_movement_sub failed", e); }
     })();
   }
-  }
   function addMovement(sectionId: string, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
     updateDoc((d) => {
       const s = d.sections.find((x) => x.id === sectionId)!;
