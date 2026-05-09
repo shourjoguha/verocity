@@ -532,10 +532,12 @@ export default function Logger() {
     });
   }
   function swapMovement(target: { sectionId: string; groupId: string; itemIndex: number }, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
+    let originalId: string | null = null;
     updateDoc((d) => {
       const s = d.sections.find((x) => x.id === target.sectionId)!;
       const g = s.groups.find((x) => x.id === target.groupId)!;
       const it = g.items[target.itemIndex];
+      originalId = it.movementId ?? null;
       it.movementId = mov.id;
       it.name = mov.name;
       // Enforce: weight always present + only one swappable.
@@ -550,6 +552,23 @@ export default function Logger() {
       it.restBetweenSetsSeconds = mov.default_rest_seconds || it.restBetweenSetsSeconds;
       seedWeightOnNewItem(it);
     });
+    // Persist substitution memory: only for plan-driven sessions, real swaps,
+    // and only when both ids are present.
+    (async () => {
+      if (!user || !planId || !dayKey) return;
+      if (!originalId || originalId === mov.id) return;
+      try {
+        await supabase.rpc("bump_movement_sub", {
+          p_user: user.id,
+          p_plan: planId,
+          p_day_key: dayKey,
+          p_orig: originalId,
+          p_repl: mov.id,
+        });
+        qc.invalidateQueries({ queryKey: ["movementSubs", user.id, planId, dayKey] });
+      } catch (e) { console.error("bump_movement_sub failed", e); }
+    })();
+  }
   }
   function addMovement(sectionId: string, mov: { id: string; name: string; metrics: Metric[]; primaryMetric: Metric; default_rest_seconds: number }) {
     updateDoc((d) => {
