@@ -12,6 +12,7 @@ import { fmtLong } from "@/hooks/useTimer";
 import { useStatsLogs } from "@/hooks/queries";
 import { familyOf } from "@/config/app.config";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** Brzycki 1RM — more aggressive than Epley at moderate reps. Falls back to Epley above 36 reps. */
 function brzycki(weight: number, reps: number) {
