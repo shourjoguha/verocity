@@ -50,6 +50,74 @@ export type Database = {
         }
         Relationships: []
       }
+      movement_subs: {
+        Row: {
+          count: number
+          created_at: string
+          day_key: string
+          dismissed_at: string | null
+          id: string
+          last_used_at: string
+          original_movement_id: string
+          owner_user_id: string
+          plan_id: string
+          replacement_movement_id: string
+        }
+        Insert: {
+          count?: number
+          created_at?: string
+          day_key: string
+          dismissed_at?: string | null
+          id?: string
+          last_used_at?: string
+          original_movement_id: string
+          owner_user_id: string
+          plan_id: string
+          replacement_movement_id: string
+        }
+        Update: {
+          count?: number
+          created_at?: string
+          day_key?: string
+          dismissed_at?: string | null
+          id?: string
+          last_used_at?: string
+          original_movement_id?: string
+          owner_user_id?: string
+          plan_id?: string
+          replacement_movement_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "movement_subs_original_movement_id_fkey"
+            columns: ["original_movement_id"]
+            isOneToOne: false
+            referencedRelation: "movements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "movement_subs_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "movement_subs_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "movement_subs_replacement_movement_id_fkey"
+            columns: ["replacement_movement_id"]
+            isOneToOne: false
+            referencedRelation: "movements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       movements: {
         Row: {
           category: string | null
@@ -224,7 +292,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      bump_movement_sub: {
+        Args: {
+          p_day_key: string
+          p_orig: string
+          p_plan: string
+          p_repl: string
+          p_user: string
+        }
+        Returns: undefined
+      }
+      week_for_log: {
+        Args: { log_date: string; plan_start: string }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never
