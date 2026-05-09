@@ -229,6 +229,67 @@ export default function Stats() {
         </section>
 
         <section className="mt-8">
+          <h3 className="font-display text-lg uppercase tracking-[-0.03em]">RPE fingerprint</h3>
+          <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground mt-1">
+            Last 30 sessions · share of working sets at each RPE, by category
+          </div>
+          {visibleRpeRows.length === 0 ? (
+            <div className="mt-3 text-xs text-muted-foreground uppercase tracking-[0.12em]">
+              Log RPE on more sets to see your fingerprint.
+            </div>
+          ) : (
+            <TooltipProvider delayDuration={150}>
+              <div className="mt-3 max-w-[440px]">
+                {/* tick row */}
+                <div className="flex items-end gap-2">
+                  <div style={{ width: 80 }} />
+                  <div className="flex-1 grid" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+                    {RPE_BINS.map((n) => (
+                      <div key={n} className="text-center font-mono text-[0.55rem] text-muted-foreground">{n}</div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-1 space-y-1.5">
+                  {visibleRpeRows.map(({ cat, bins, total }) => (
+                    <div key={cat} className="flex items-center gap-2">
+                      <div className="text-[0.6rem] uppercase tracking-[0.14em]" style={{ width: 80 }}>{cat}</div>
+                      <div className="flex-1 flex h-5 border hairline">
+                        {RPE_BINS.map((n, i) => {
+                          const count = bins[i];
+                          const pct = total > 0 ? (count / total) * 100 : 0;
+                          return (
+                            <Tooltip key={n}>
+                              <TooltipTrigger asChild>
+                                <div
+                                  className={cn("h-full bg-foreground border-r hairline last:border-r-0")}
+                                  style={{ width: `${100 / 6}%`, opacity: count > 0 ? rpeBinOpacity(n) : 0 }}
+                                  aria-label={`RPE ${n}: ${count} sets, ${pct.toFixed(0)}%`}
+                                />
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="text-xs">
+                                RPE {n} · {count} sets · {pct.toFixed(0)}%
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {hiddenRpeCount > 0 && (
+                  <button
+                    onClick={() => setRpeShowAll((v) => !v)}
+                    className="mt-2 text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {rpeShowAll ? "show less" : `+ ${hiddenRpeCount} more`}
+                  </button>
+                )}
+              </div>
+            </TooltipProvider>
+          )}
+        </section>
+
+        <section className="mt-8">
           <div className="flex items-baseline justify-between">
             <h3 className="font-display text-lg uppercase tracking-[-0.03em]">Top movements (e1RM trend)</h3>
             <div className="flex items-center gap-1">
