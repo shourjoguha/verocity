@@ -129,6 +129,46 @@ export default function Stats() {
   const TIER_OPACITY = ["", "opacity-20", "opacity-40", "opacity-60", "opacity-80", "opacity-100"];
   const DOW_LABELS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
+  // RPE fingerprint: per-category distribution across last 30 sessions.
+  const RPE_BINS = [5, 6, 7, 8, 9, 10] as const;
+  const CANONICAL_FAMILIES = new Set(Object.keys((appConfigForFamily()).movementFamilies));
+  const rpeFingerprint = useMemo(() => {
+    const last30 = logs.slice(-30);
+    const byCat = new Map<string, number[]>(); // cat -> counts per bin
+    let totalSets = 0;
+    for (const log of last30) {
+      const doc = log.data;
+      if (!doc?.sections) continue;
+      for (const sec of doc.sections) for (const g of sec.groups) for (const it of g.items) {
+        const famKey = familyOf(it.name);
+        const cat = CANONICAL_FAMILIES.has(famKey) ? famKey : "other";
+        for (const set of it.sets) {
+          const r = set.actual.rpe;
+          if (typeof r !== "number") continue;
+          const rounded = Math.round(r);
+          const clamped = Math.max(5, Math.min(10, rounded));
+          const bins = byCat.get(cat) ?? [0, 0, 0, 0, 0, 0];
+          bins[clamped - 5] += 1;
+          byCat.set(cat, bins);
+          totalSets += 1;
+        }
+      }
+    }
+    const rows = Array.from(byCat.entries())
+      .map(([cat, bins]) => ({ cat, bins, total: bins.reduce((a, b) => a + b, 0) }))
+      .filter((r) => r.total >= 5)
+      .sort((a, b) => b.total - a.total);
+    return { rows, totalSets };
+  }, [logs]);
+  const [rpeShowAll, setRpeShowAll] = useState(false);
+  const visibleRpeRows = rpeShowAll ? rpeFingerprint.rows : rpeFingerprint.rows.slice(0, 6);
+  const hiddenRpeCount = Math.max(0, rpeFingerprint.rows.length - 6);
+  // RPE bin opacity: RPE 10 = 100%, RPE 5 = 30% (linear).
+  const rpeBinOpacity = (rpe: number) => {
+    const t = (rpe - 5) / 5; // 0..1
+    return 0.3 + t * 0.7;
+  };
+
   return (
     <>
       <TopBar title="Stats" />
