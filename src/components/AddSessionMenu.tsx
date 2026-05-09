@@ -6,7 +6,7 @@ import { useSession } from "@/lib/session";
 import { appConfig } from "@/config/app.config";
 import { ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { loadActivePlanStart, makeDayKey, weekForDate } from "@/lib/weekPicker";
+import { loadActivePlanStart, weekForDate } from "@/lib/weekPicker";
 import { useActivePlan } from "@/hooks/queries";
 
 interface Props {
@@ -34,8 +34,6 @@ export function AddSessionMenu({ open, onClose, date }: Props) {
   useEffect(() => { if (open) setStep("root"); }, [open]);
 
   function pickPlanDay(dayName: string) {
-    const planDay = plan?.days.find((d) => d.dayName === dayName);
-    void planDay; void makeDayKey;
     const w = weekForDate(planStart, date);
     nav(`/log/new?day=${encodeURIComponent(dayName)}&week=${w}&date=${date}`);
     onClose();
