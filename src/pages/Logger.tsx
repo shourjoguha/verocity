@@ -38,6 +38,8 @@ import { VibeCheck } from "@/components/VibeCheck";
 import { whyTag, WhyTagHost } from "@/components/WhyTagPrompt";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { RepsStepper } from "@/components/RepsStepper";
+import { useQuery } from "@tanstack/react-query";
+import { useMovements } from "@/hooks/queries";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
