@@ -2,21 +2,21 @@
  *  Replaces the press-hold-drag StepperInput which is unusable on mobile.
  *  Tap-only: ▲ / ▼ chevrons + numeric input. Tap-outside commits + closes.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { appConfig } from "@/config/app.config";
 import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
+  onOpenChange: (open: boolean) => void;
   value: number | null | undefined;
   /** Hard ceiling for the up arrow. Use Infinity for AMRAP. */
   max?: number;
-  /** Element to anchor the popover against. */
-  anchorEl: HTMLElement | null;
+  /** Trigger element (the reps button). */
+  trigger: ReactNode;
   onCommit: (v: number) => void;
-  onClose: () => void;
 }
 
 const haptic = (ms = 5) => {
@@ -24,7 +24,7 @@ const haptic = (ms = 5) => {
   try { navigator.vibrate?.(ms); } catch { /* noop */ }
 };
 
-export function RepsStepper({ open, value, max = Infinity, anchorEl, onCommit, onClose }: Props) {
+export function RepsStepper({ open, onOpenChange, value, max = Infinity, trigger, onCommit }: Props) {
   const [draft, setDraft] = useState<string>(value == null ? "" : String(value));
   const initialRef = useRef<number | null>(value ?? null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -75,18 +75,18 @@ export function RepsStepper({ open, value, max = Infinity, anchorEl, onCommit, o
       const v = Math.max(0, Math.min(max, parsed));
       if (v !== (initialRef.current ?? null)) onCommit(v);
     }
-    onClose();
+    onOpenChange(false);
   }
 
   function handleOpenChange(next: boolean) {
-    if (next) return;
-    if (escRef.current) { onClose(); return; }
+    if (next) { onOpenChange(true); return; }
+    if (escRef.current) { onOpenChange(false); return; }
     commitAndClose();
   }
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverAnchor virtualRef={{ current: anchorEl } as React.RefObject<HTMLElement>} />
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         side="top"
         align="center"
@@ -94,7 +94,7 @@ export function RepsStepper({ open, value, max = Infinity, anchorEl, onCommit, o
         className="w-auto max-w-[220px] p-2 bg-surface border hairline shadow-md"
         style={{ maxHeight: "25vh" }}
         onKeyDown={(e) => {
-          if (e.key === "Escape") { escRef.current = true; onClose(); }
+          if (e.key === "Escape") { escRef.current = true; onOpenChange(false); }
         }}
       >
         <div className="flex items-center gap-1">
