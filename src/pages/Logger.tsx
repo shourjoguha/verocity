@@ -139,6 +139,13 @@ export default function Logger() {
               if (planDay?.warmup) setWarmupNote(planDay.warmup);
             }
           }
+          if (data.plan_id) {
+            const { data: planRow } = await supabase.from("plans").select("start_date").eq("id", data.plan_id).maybeSingle();
+            const start = planRow?.start_date ?? null;
+            setPlanStartIso(start);
+            // Re-derive week from log_date so historical/edited rows stay correct.
+            if (start && data.log_date) setWeekNumber(weekForDate(start, data.log_date));
+          }
         }
       } else {
         // Seed log date from ?date= if present.
@@ -165,11 +172,13 @@ export default function Logger() {
             return;
           }
           const plan = (planRow.parsed as unknown as ParsedPlan);
+          setPlanStartIso(planRow.start_date ?? null);
           const planDay = plan.days.find((d) => d.dayName === day) ?? plan.days[0];
           setPlanId(planRow.id);
           const dKey = makeDayKey(planDay.dayName, planDay.type);
           setDayKey(dKey);
-          const resolvedWeek = week || (await nextWeekForDayKey(user.id, dKey));
+          const dateParam2 = search.get("date") ?? new Date().toISOString().slice(0, 10);
+          const resolvedWeek = week || weekForDate(planRow.start_date ?? null, dateParam2);
           setWeekNumber(resolvedWeek);
           const built = buildLogDocument(plan, planDay, resolvedWeek);
           const maxByMov = await loadMaxWeightByMovement(user.id);
