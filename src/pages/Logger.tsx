@@ -219,6 +219,14 @@ export default function Logger() {
   // Sync stopwatch into accumSec
   useEffect(() => { setAccumSec(sw.seconds); }, [sw.seconds]);
 
+  // Whenever logDate or plan start changes, recompute the week from the date
+  // (planned sessions only — custom sessions keep weekNumber = 0).
+  useEffect(() => {
+    if (!planId || !planStartIso) return;
+    const iso = format(logDate, "yyyy-MM-dd");
+    setWeekNumber(weekForDate(planStartIso, iso));
+  }, [logDate, planId, planStartIso]);
+
   async function saveLog(showToast = true) {
     if (!user || !doc) return;
     sw.pause();
