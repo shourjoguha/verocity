@@ -215,15 +215,121 @@ export type Database = {
           },
         ]
       }
+      plans_bk_20260515: {
+        Row: {
+          created_at: string | null
+          end_date: string | null
+          id: string | null
+          is_active: boolean | null
+          name: string | null
+          owner_user_id: string | null
+          parsed: Json | null
+          source_markdown: string | null
+          start_date: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          end_date?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          name?: string | null
+          owner_user_id?: string | null
+          parsed?: Json | null
+          source_markdown?: string | null
+          start_date?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          end_date?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          name?: string | null
+          owner_user_id?: string | null
+          parsed?: Json | null
+          source_markdown?: string | null
+          start_date?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      recommendations: {
+        Row: {
+          acted_at: string | null
+          action: string
+          block_week: number | null
+          confidence: number
+          created_at: string
+          drift_score: number | null
+          goal_ref: string
+          id: string
+          outcome_note: string | null
+          owner_user_id: string
+          rx_md_path: string
+          signals_fired: Json | null
+          source_refs: Json | null
+          status: string
+          tldr: string
+          trigger_type: string
+        }
+        Insert: {
+          acted_at?: string | null
+          action: string
+          block_week?: number | null
+          confidence: number
+          created_at?: string
+          drift_score?: number | null
+          goal_ref: string
+          id?: string
+          outcome_note?: string | null
+          owner_user_id: string
+          rx_md_path: string
+          signals_fired?: Json | null
+          source_refs?: Json | null
+          status?: string
+          tldr: string
+          trigger_type: string
+        }
+        Update: {
+          acted_at?: string | null
+          action?: string
+          block_week?: number | null
+          confidence?: number
+          created_at?: string
+          drift_score?: number | null
+          goal_ref?: string
+          id?: string
+          outcome_note?: string | null
+          owner_user_id?: string
+          rx_md_path?: string
+          signals_fired?: Json | null
+          source_refs?: Json | null
+          status?: string
+          tldr?: string
+          trigger_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recommendations_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workout_logs: {
         Row: {
           activity_type: string
+          avg_hr_bpm: number | null
           created_at: string
           data: Json
           day_key: string | null
           ended_at: string | null
           id: string
           log_date: string
+          max_hr_bpm: number | null
           notes: string | null
           owner_user_id: string
           plan_id: string | null
@@ -236,12 +342,14 @@ export type Database = {
         }
         Insert: {
           activity_type?: string
+          avg_hr_bpm?: number | null
           created_at?: string
           data?: Json
           day_key?: string | null
           ended_at?: string | null
           id?: string
           log_date?: string
+          max_hr_bpm?: number | null
           notes?: string | null
           owner_user_id: string
           plan_id?: string | null
@@ -254,12 +362,14 @@ export type Database = {
         }
         Update: {
           activity_type?: string
+          avg_hr_bpm?: number | null
           created_at?: string
           data?: Json
           day_key?: string | null
           ended_at?: string | null
           id?: string
           log_date?: string
+          max_hr_bpm?: number | null
           notes?: string | null
           owner_user_id?: string
           plan_id?: string | null
@@ -286,6 +396,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      workout_logs_bk_20260515: {
+        Row: {
+          activity_type: string | null
+          created_at: string | null
+          data: Json | null
+          day_key: string | null
+          ended_at: string | null
+          id: string | null
+          log_date: string | null
+          notes: string | null
+          owner_user_id: string | null
+          plan_id: string | null
+          started_at: string | null
+          status: string | null
+          tags: string[] | null
+          total_seconds: number | null
+          updated_at: string | null
+          week_number: number | null
+        }
+        Insert: {
+          activity_type?: string | null
+          created_at?: string | null
+          data?: Json | null
+          day_key?: string | null
+          ended_at?: string | null
+          id?: string | null
+          log_date?: string | null
+          notes?: string | null
+          owner_user_id?: string | null
+          plan_id?: string | null
+          started_at?: string | null
+          status?: string | null
+          tags?: string[] | null
+          total_seconds?: number | null
+          updated_at?: string | null
+          week_number?: number | null
+        }
+        Update: {
+          activity_type?: string | null
+          created_at?: string | null
+          data?: Json | null
+          day_key?: string | null
+          ended_at?: string | null
+          id?: string | null
+          log_date?: string | null
+          notes?: string | null
+          owner_user_id?: string | null
+          plan_id?: string | null
+          started_at?: string | null
+          status?: string | null
+          tags?: string[] | null
+          total_seconds?: number | null
+          updated_at?: string | null
+          week_number?: number | null
+        }
+        Relationships: []
       }
     }
     Views: {
