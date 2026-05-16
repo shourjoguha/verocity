@@ -1823,11 +1823,11 @@ function SetRow(props: {
       onDragEnd={onDragEnd}
     >
       <td
-        className="font-mono text-xs select-none cursor-pointer"
+        className="font-mono text-xs select-none cursor-pointer min-h-[44px] min-w-[44px] align-middle"
         title={set.actual.completed ? "Long-press to copy forward" : undefined}
         {...(set.actual.completed ? cloneLp : {})}
       >
-        <span className="inline-flex items-center gap-0.5">
+        <span className="inline-flex items-center justify-center gap-0.5 min-h-[44px] min-w-[44px]">
           {idx + 1}
           {set.actual.completed && <ChevronDown className="h-3 w-3 opacity-30" />}
         </span>
@@ -1899,28 +1899,25 @@ function SetRow(props: {
           {props.isActive && voice.supported && !props.voiceDeniedRef.current && (
             <motion.button
               onClick={handleVoice}
-              className="text-muted-foreground hover:text-foreground"
+              className="h-11 w-11 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
               animate={voice.listening ? { scale: [1, 1.15, 1] } : undefined}
               transition={voice.listening ? { repeat: Infinity, duration: 1 } : undefined}
               aria-label="Voice input"
               title='Say "120 by 5"'
             >
-              <Mic className="h-3.5 w-3.5" />
+              <Mic className="h-4 w-4" />
             </motion.button>
           )}
-          <button
-            onClick={props.onStartRest}
-            className="text-[0.6rem] uppercase tracking-[0.12em] border hairline px-1.5 py-0.5 hover:bg-secondary transition-colors duration-slow ease-swiss"
-            title="Start rest"
-          >
-            rest
-          </button>
+          <RestSecondsInput
+            seconds={set.restAfterSeconds ?? props.item.restBetweenSetsSeconds}
+            onCommit={(sec) => props.onSetRest(sec)}
+          />
         </div>
       </td>
       <td className="text-right relative">
         <button
           onClick={props.onToggleComplete}
-          className="touch-target-sm"
+          className="h-11 w-11 inline-flex items-center justify-center"
           aria-label="Toggle complete"
         >
           <span className={cn("h-4 w-4 border block", set.actual.completed ? "bg-foreground border-foreground" : "hairline")} />
