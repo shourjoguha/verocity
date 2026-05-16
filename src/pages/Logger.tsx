@@ -600,7 +600,7 @@ export default function Logger() {
       it.metrics = Array.from(set);
       it.primaryMetric = mov.primaryMetric;
       it.restBetweenSetsSeconds = mov.default_rest_seconds || it.restBetweenSetsSeconds;
-      seedWeightOnNewItem(it);
+      seedNewItem(it);
     });
     // Persist substitution memory: only for plan-driven sessions, real swaps,
     // and only when both ids are present.
@@ -637,7 +637,7 @@ export default function Logger() {
         sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
         restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
       };
-      seedWeightOnNewItem(item);
+      seedNewItem(item);
       s.groups.push({
         id: makeId(),
         kind: "single",
@@ -723,7 +723,7 @@ export default function Logger() {
         sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
         restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
       };
-      seedWeightOnNewItem(item);
+      seedNewItem(item);
       g.items.push(item);
       if (g.kind === "single") {
         g.kind = "superset";
