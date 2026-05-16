@@ -1945,8 +1945,8 @@ function SetRow(props: {
   );
 }
 
-function RestEditor(props: { label: string; seconds: number; onChange: (s: number) => void; onStart: () => void; compact?: boolean }) {
-  const { label, seconds, onChange, onStart, compact } = props;
+function RestEditor(props: { label: string; seconds: number; onChange: (s: number) => void; compact?: boolean }) {
+  const { label, seconds, onChange, compact } = props;
   return (
     <div className="flex items-center gap-1">
       <Popover>
@@ -1972,7 +1972,6 @@ function RestEditor(props: { label: string; seconds: number; onChange: (s: numbe
           />
         </PopoverContent>
       </Popover>
-      <button onClick={onStart} className="border hairline px-1.5 py-0.5 text-[0.6rem] uppercase tracking-[0.12em] hover:bg-foreground hover:text-background transition-colors duration-slow ease-swiss">go</button>
     </div>
   );
 }
