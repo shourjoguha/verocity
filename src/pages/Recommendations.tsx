@@ -247,17 +247,16 @@ function RecDetailDialog({
       requireFit: boolean;
     }) => {
       if (!rec) throw new Error("no rec");
-      const payload: Record<string, unknown> = {
-        status: args.status,
-        acted_disposition: args.acted_disposition,
-        acted_at: new Date().toISOString(),
-        subjective_fit_1_5: args.requireFit ? fit : (fit ?? null),
-        next_session_id: nextSessionId,
-        outcome_note: note.trim() ? note.trim().slice(0, 280) : null,
-      };
       const { error } = await supabase
         .from("recommendations")
-        .update(payload)
+        .update({
+          status: args.status,
+          acted_disposition: args.acted_disposition,
+          acted_at: new Date().toISOString(),
+          subjective_fit_1_5: args.requireFit ? fit : fit,
+          next_session_id: nextSessionId,
+          outcome_note: note.trim() ? note.trim().slice(0, 280) : null,
+        })
         .eq("id", rec.id)
         .is("acted_at", null);
       if (error) throw error;
