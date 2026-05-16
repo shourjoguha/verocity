@@ -1398,16 +1398,16 @@ function ItemRow(props: {
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={props.onSwap}
-            className="touch-target text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss"
+            className="h-11 w-11 inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss"
             title="Swap movement"
             aria-label="Swap movement"
           >
-            <Replace className="h-3.5 w-3.5" />
+            <Replace className="h-4 w-4" />
           </button>
           <RestEditor label="Rest" seconds={item.restBetweenSetsSeconds} onChange={props.onItemRest} compact />
           <Popover>
             <PopoverTrigger asChild>
-              <button className="touch-target text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss" title="Options" aria-label="Options"><Settings2 className="h-3.5 w-3.5" /></button>
+              <button className="h-11 w-11 inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss" title="Options" aria-label="Options"><Settings2 className="h-4 w-4" /></button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-52 p-1">
               <button onClick={props.onSwap} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Replace className="h-3 w-3" /> Swap</button>
