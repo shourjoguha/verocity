@@ -1498,13 +1498,13 @@ function ItemCompleteCheckbox({ allComplete, noneComplete, onClick }: { allCompl
   return (
     <button
       onClick={onClick}
-      className="touch-target relative"
+      className="h-11 w-11 inline-flex items-center justify-center relative"
       title={allComplete ? "Mark all incomplete" : "Mark all complete"}
       aria-label="Toggle all sets complete"
     >
       <span
         className={cn(
-          "h-5 w-5 border flex items-center justify-center transition-colors",
+          "h-4 w-4 border flex items-center justify-center transition-colors",
           allComplete ? "bg-foreground border-foreground text-background" : "hairline",
         )}
       >
