@@ -1282,8 +1282,8 @@ function GroupBlock(props: {
         <div className="flex items-center justify-between text-[0.6rem] uppercase tracking-[0.16em] px-1 pb-2">
           <span className="font-bold">{group.kind}</span>
           <div className="flex items-center gap-2">
-            <RestEditor label="Within" seconds={group.restWithinSeconds ?? appConfig.timer.defaults.withinSupersetSeconds} onChange={(s) => props.onGroupRest(section.id, group.id, "restWithinSeconds", s)} onStart={() => props.onStartRest(group.restWithinSeconds ?? appConfig.timer.defaults.withinSupersetSeconds, "Within")} />
-            <RestEditor label="After round" seconds={group.restAfterRoundSeconds ?? appConfig.timer.defaults.afterSupersetSeconds} onChange={(s) => props.onGroupRest(section.id, group.id, "restAfterRoundSeconds", s)} onStart={() => props.onStartRest(group.restAfterRoundSeconds ?? appConfig.timer.defaults.afterSupersetSeconds, "After round")} />
+            <RestEditor label="Within" seconds={group.restWithinSeconds ?? appConfig.timer.defaults.withinSupersetSeconds} onChange={(s) => props.onGroupRest(section.id, group.id, "restWithinSeconds", s)} />
+            <RestEditor label="After round" seconds={group.restAfterRoundSeconds ?? appConfig.timer.defaults.afterSupersetSeconds} onChange={(s) => props.onGroupRest(section.id, group.id, "restAfterRoundSeconds", s)} />
             <button title="Convert to single" onClick={() => props.onChangeKind(section.id, group.id, "single")} className="text-muted-foreground hover:text-foreground"><Ungroup className="h-3.5 w-3.5" /></button>
           </div>
         </div>
@@ -1404,7 +1404,7 @@ function ItemRow(props: {
           >
             <Replace className="h-3.5 w-3.5" />
           </button>
-          <RestEditor label="Rest" seconds={item.restBetweenSetsSeconds} onChange={props.onItemRest} onStart={() => onStartRest(item.restBetweenSetsSeconds, item.name)} compact />
+          <RestEditor label="Rest" seconds={item.restBetweenSetsSeconds} onChange={props.onItemRest} compact />
           <Popover>
             <PopoverTrigger asChild>
               <button className="touch-target text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss" title="Options" aria-label="Options"><Settings2 className="h-3.5 w-3.5" /></button>
