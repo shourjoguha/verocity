@@ -166,7 +166,10 @@ export default function Logger() {
       if (logId) {
         const { data } = await supabase.from("workout_logs").select("*").eq("id", logId).maybeSingle();
         if (data) {
-          setDoc(migrateDocument(data.data as unknown as LogDocument));
+          const migrated = migrateDocument(data.data as unknown as LogDocument);
+          const lastByMov = await loadLastSetByMovement(user.id);
+          lastByMovRef.current = lastByMov;
+          setDoc(prefillFromLastSet(migrated, lastByMov));
           setDayKey(data.day_key ?? "");
           setWeekNumber(data.week_number ?? 1);
           setPlanId(data.plan_id);
@@ -203,9 +206,9 @@ export default function Logger() {
 
         if (isCustomMode) {
           const blank = buildBlankDocument();
-          const maxByMov = await loadMaxWeightByMovement(user.id);
-          maxByMovRef.current = maxByMov;
-          setDoc(prefillWeightsFromMax(blank, maxByMov));
+          const lastByMov = await loadLastSetByMovement(user.id);
+          lastByMovRef.current = lastByMov;
+          setDoc(prefillFromLastSet(blank, lastByMov));
           setDayKey("Custom workout");
           setWeekNumber(0);
           setActivityType("strength");
@@ -230,9 +233,9 @@ export default function Logger() {
           const resolvedWeek = week || weekForDate(planRow.start_date ?? null, dateParam2);
           setWeekNumber(resolvedWeek);
           const built = buildLogDocument(plan, planDay, resolvedWeek);
-          const maxByMov = await loadMaxWeightByMovement(user.id);
-          maxByMovRef.current = maxByMov;
-          setDoc(prefillWeightsFromMax(built, maxByMov));
+          const lastByMov = await loadLastSetByMovement(user.id);
+          lastByMovRef.current = lastByMov;
+          setDoc(prefillFromLastSet(built, lastByMov));
           const inferred = appConfig.activity.dayTypeTag(planDay.type);
           setActivityType(inferred);
           setTags([inferred]);
