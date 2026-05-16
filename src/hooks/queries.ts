@@ -67,6 +67,9 @@ export const qk = {
     ["logs", "month", userId, start, end] as const,
   movements: (ownerId?: string | null) => ["movements", ownerId] as const,
   adoptablePlans: (userId?: string | null) => ["plans", "adoptable", userId] as const,
+  recommendations: (userId?: string | null) => ["recommendations", userId] as const,
+  recommendation: (id?: string | null) => ["recommendation", id] as const,
+  recentDoneLogs: (userId?: string | null) => ["logs", "recent-done", userId] as const,
 };
 
 export function useActivePlan(userId?: string | null) {
