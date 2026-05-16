@@ -1257,6 +1257,7 @@ function GroupBlock(props: {
   onAddSet: (sectionId: string, groupId: string, itemIdx: number) => void;
   onRemoveSet: (sectionId: string, groupId: string, itemIdx: number, setIdx: number) => void;
   onItemRest: (sectionId: string, groupId: string, itemIdx: number, sec: number) => void;
+  onSetRest: (sectionId: string, groupId: string, itemIdx: number, setIdx: number, sec: number) => void;
   onGroupRest: (sectionId: string, groupId: string, key: "restAfterRoundSeconds" | "restWithinSeconds", sec: number) => void;
   onChangeKind: (sectionId: string, groupId: string, kind: LogGroup["kind"]) => void;
   onRemoveItem: (sectionId: string, groupId: string, itemIdx: number) => void;
@@ -1301,6 +1302,7 @@ function GroupBlock(props: {
           onAddSet={() => props.onAddSet(section.id, group.id, idx)}
           onRemoveSet={(setIdx) => props.onRemoveSet(section.id, group.id, idx, setIdx)}
           onItemRest={(sec) => props.onItemRest(section.id, group.id, idx, sec)}
+          onSetRest={(setIdx, sec) => props.onSetRest(section.id, group.id, idx, setIdx, sec)}
           onRemoveItem={() => props.onRemoveItem(section.id, group.id, idx)}
           onMoveItem={(dstSectionId) => props.onMoveItem(section.id, group.id, idx, dstSectionId)}
           onSwap={() => props.onSwap(group.id, idx)}
