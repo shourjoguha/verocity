@@ -966,6 +966,7 @@ export default function Logger() {
                         onAddSet={addSet}
                         onRemoveSet={removeSet}
                         onItemRest={setItemRest}
+                        onSetRest={setRestAfter}
                         onGroupRest={setGroupRest}
                         onChangeKind={changeGroupKind}
                         onRemoveItem={removeItem}
