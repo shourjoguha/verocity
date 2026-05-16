@@ -13,6 +13,7 @@ import { cn, sessionTypeFromDayKey } from "@/lib/utils";
 import { appConfig } from "@/config/app.config";
 import type { PlanDay } from "@/lib/types";
 import { useActivePlan, useRecentLogs, useAllUserLogs, qk, type LogRow, type LogRowWithData as StatsLogRow, type ActivePlanRow as PlanRow } from "@/hooks/queries";
+import { useRecommendations } from "@/hooks/queries";
 import { SetShapeStrip } from "@/components/SetShapeStrip";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -52,6 +53,7 @@ export default function Home() {
   const planQ = useActivePlan(user?.id);
   const recentQ = useRecentLogs(user?.id, 5);
   const allQ = useAllUserLogs(user?.id);
+  const recsQ = useRecommendations(user?.id);
   const plan = planQ.data ?? null;
   const logs = recentQ.data ?? [];
   const allLogs = allQ.data ?? [];
@@ -102,6 +104,12 @@ export default function Home() {
     }
     return { sessions: allLogs.filter((l) => l.status === "done").length, totalSeconds, oneRm };
   }, [allLogs]);
+
+  const recsBadge = (recsQ.data ?? []).filter((r) => {
+    if (r.status === "open") return true;
+    if (r.status === "snoozed" && r.snoozed_until && new Date(r.snoozed_until).getTime() <= Date.now()) return true;
+    return false;
+  }).length;
 
   return (
     <>
@@ -181,7 +189,7 @@ export default function Home() {
 
         <HomeStats logs={allLogs} sessions={homeStats.sessions} totalSeconds={homeStats.totalSeconds} />
 
-        <section className="mt-10 grid grid-cols-3 sm:grid-cols-5 gap-2">
+        <section className="mt-10 grid grid-cols-3 sm:grid-cols-6 gap-2">
           <button onClick={() => setLogMenuOpen(true)} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">New</div>
             <div className="font-display text-base mt-1">Log</div>
@@ -201,6 +209,15 @@ export default function Home() {
           <button onClick={() => nav("/plan/upload")} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss">
             <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">Plan</div>
             <div className="font-display text-base mt-1">Upload</div>
+          </button>
+          <button onClick={() => nav("/recommendations")} className="border hairline p-3 text-left hover:bg-secondary transition-colors duration-slow ease-swiss relative">
+            <div className="text-[0.6rem] uppercase tracking-[0.14em] text-muted-foreground">Coach</div>
+            <div className="font-display text-base mt-1">Recs</div>
+            {recsBadge > 0 && (
+              <span className="absolute top-2 right-2 min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center border hairline bg-foreground text-background text-[0.55rem] font-mono">
+                {recsBadge}
+              </span>
+            )}
           </button>
         </section>
       </main>
