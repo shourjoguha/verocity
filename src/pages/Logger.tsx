@@ -1734,7 +1734,7 @@ function SetRow(props: {
   onChange: (m: Metric, v: number | null) => void;
   onToggleComplete: () => void;
   onRemove: () => void;
-  onStartRest: () => void;
+  onSetRest: (sec: number) => void;
   onCloneForward: () => void;
   onOpenWeightWheel: () => void;
   voiceDeniedRef: React.MutableRefObject<boolean>;
