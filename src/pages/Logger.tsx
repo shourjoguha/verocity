@@ -1978,6 +1978,7 @@ function RestEditor(props: { label: string; seconds: number; onChange: (s: numbe
 }
 
 function RestOverlay(props: { targetSeconds: number; label: string; onClose: () => void }) {
+  // kept for cloneForward arm-rest behavior
   const cd = useCountdown(props.targetSeconds);
   useEffect(() => { cd.start(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   useEffect(() => {
