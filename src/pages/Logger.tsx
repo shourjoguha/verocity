@@ -29,7 +29,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil, ArrowRightLeft, ChevronDown, Mic } from "lucide-react";
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
-import { loadMaxWeightByMovement, prefillWeightsFromMax } from "@/lib/lastPerformance";
+import { loadLastSetByMovement, prefillFromLastSet, prefillItemFromLastSet, type LastSetValues } from "@/lib/lastPerformance";
 import { makeDayKey, weekForDate } from "@/lib/weekPicker";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion, useMotionValue, useTransform, animate, type PanInfo } from "framer-motion";
@@ -151,18 +151,11 @@ export default function Logger() {
     qc.invalidateQueries({ queryKey: ["movementSubs", user.id, planId, dayKey] });
   }
 
-  // Cache of all-time max weight per movement (lowercased name); populated on initial load.
-  const maxByMovRef = useRef<Map<string, number>>(new Map());
-  function seedWeightOnNewItem(item: LogItem) {
-    if (!item.metrics.includes("weight")) return;
-    const max = maxByMovRef.current.get((item.name ?? "").trim().toLowerCase());
-    if (max == null) return;
-    for (const s of item.sets) {
-      if (s.actual.weight == null) {
-        s.actual.weight = max;
-        s.actual.prefilled = true;
-      }
-    }
+  // Cache of "last completed set" per movement name; populated on initial load
+  // and reused when swapping or adding movements mid-session.
+  const lastByMovRef = useRef<Map<string, LastSetValues>>(new Map());
+  function seedNewItem(item: LogItem) {
+    prefillItemFromLastSet(item, lastByMovRef.current);
   }
 
   // Initial load
