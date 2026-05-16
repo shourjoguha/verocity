@@ -7,7 +7,7 @@ import { useSession } from "@/lib/session";
 import { useRecommendations, type RecommendationRow } from "@/hooks/queries";
 import { cn } from "@/lib/utils";
 
-const DOMAINS = ["all", "fitness", "finance", "nutrition"] as const;
+const DOMAINS = ["all", "fitness", "nutrition"] as const;
 type DomainFilter = (typeof DOMAINS)[number];
 
 function ageDays(iso: string): number {
