@@ -1947,6 +1947,58 @@ function SetRow(props: {
 }
 
 function RestEditor(props: { label: string; seconds: number; onChange: (s: number) => void; compact?: boolean }) {
+  return _RestEditorImpl(props);
+}
+
+/** Inline editable per-set rest seconds. Numeric, 0–600s, commits on blur / Enter. */
+function RestSecondsInput({ seconds, onCommit }: { seconds: number | null | undefined; onCommit: (sec: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState<string>(seconds == null ? "" : String(seconds));
+  useEffect(() => { if (!editing) setValue(seconds == null ? "" : String(seconds)); }, [seconds, editing]);
+  function commit() {
+    setEditing(false);
+    if (value === "") { onCommit(0); return; }
+    const n = Math.max(0, Math.min(600, Math.round(Number(value) || 0)));
+    onCommit(n);
+  }
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="font-mono text-[0.65rem] border hairline px-1.5 py-0.5 min-h-[28px] min-w-[44px] hover:bg-secondary transition-colors duration-slow ease-swiss"
+        title="Edit rest"
+        aria-label="Edit rest seconds"
+      >
+        {seconds == null ? "—s" : `${seconds}s`}
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex items-center">
+      <input
+        autoFocus
+        type="number"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        min={0}
+        max={600}
+        step={1}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.currentTarget.blur(); }
+          if (e.key === "Escape") { setValue(seconds == null ? "" : String(seconds)); setEditing(false); }
+        }}
+        className="w-12 text-right bg-transparent border-b hairline focus:border-foreground focus:outline-none font-mono text-[0.7rem] no-zoom-input py-0.5"
+      />
+      <span className="text-[0.6rem] text-muted-foreground ml-0.5">s</span>
+    </span>
+  );
+}
+
+function _RestEditorImpl(props: { label: string; seconds: number; onChange: (s: number) => void; compact?: boolean }) {
   const { label, seconds, onChange, compact } = props;
   return (
     <div className="flex items-center gap-1">
