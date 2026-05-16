@@ -110,6 +110,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "movement_subs_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "v_drift_signals"
+            referencedColumns: ["plan_id"]
+          },
+          {
             foreignKeyName: "movement_subs_replacement_movement_id_fkey"
             columns: ["replacement_movement_id"]
             isOneToOne: false
@@ -257,59 +264,101 @@ export type Database = {
       recommendations: {
         Row: {
           acted_at: string | null
+          acted_disposition: string | null
           action: string
           block_week: number | null
+          body_md: string | null
           confidence: number
           created_at: string
+          domain: string
           drift_score: number | null
           goal_ref: string
           id: string
+          next_session_id: string | null
           outcome_note: string | null
           owner_user_id: string
           rx_md_path: string
           signals_fired: Json | null
+          snooze_count: number
+          snoozed_until: string | null
           source_refs: Json | null
           status: string
+          subjective_fit_1_5: number | null
           tldr: string
           trigger_type: string
         }
         Insert: {
           acted_at?: string | null
+          acted_disposition?: string | null
           action: string
           block_week?: number | null
+          body_md?: string | null
           confidence: number
           created_at?: string
+          domain?: string
           drift_score?: number | null
           goal_ref: string
           id?: string
+          next_session_id?: string | null
           outcome_note?: string | null
           owner_user_id: string
           rx_md_path: string
           signals_fired?: Json | null
+          snooze_count?: number
+          snoozed_until?: string | null
           source_refs?: Json | null
           status?: string
+          subjective_fit_1_5?: number | null
           tldr: string
           trigger_type: string
         }
         Update: {
           acted_at?: string | null
+          acted_disposition?: string | null
           action?: string
           block_week?: number | null
+          body_md?: string | null
           confidence?: number
           created_at?: string
+          domain?: string
           drift_score?: number | null
           goal_ref?: string
           id?: string
+          next_session_id?: string | null
           outcome_note?: string | null
           owner_user_id?: string
           rx_md_path?: string
           signals_fired?: Json | null
+          snooze_count?: number
+          snoozed_until?: string | null
           source_refs?: Json | null
           status?: string
+          subjective_fit_1_5?: number | null
           tldr?: string
           trigger_type?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "recommendations_next_session_id_fkey"
+            columns: ["next_session_id"]
+            isOneToOne: false
+            referencedRelation: "v_movement_session_metrics"
+            referencedColumns: ["session_id"]
+          },
+          {
+            foreignKeyName: "recommendations_next_session_id_fkey"
+            columns: ["next_session_id"]
+            isOneToOne: false
+            referencedRelation: "v_session_metrics"
+            referencedColumns: ["session_id"]
+          },
+          {
+            foreignKeyName: "recommendations_next_session_id_fkey"
+            columns: ["next_session_id"]
+            isOneToOne: false
+            referencedRelation: "workout_logs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "recommendations_owner_user_id_fkey"
             columns: ["owner_user_id"]
@@ -318,6 +367,135 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      recommendations_bk_t_20260516: {
+        Row: {
+          acted_at: string | null
+          acted_disposition: string | null
+          action: string | null
+          block_week: number | null
+          confidence: number | null
+          created_at: string | null
+          drift_score: number | null
+          goal_ref: string | null
+          id: string | null
+          next_session_id: string | null
+          outcome_note: string | null
+          owner_user_id: string | null
+          rx_md_path: string | null
+          signals_fired: Json | null
+          snooze_count: number | null
+          snoozed_until: string | null
+          source_refs: Json | null
+          status: string | null
+          subjective_fit_1_5: number | null
+          tldr: string | null
+          trigger_type: string | null
+        }
+        Insert: {
+          acted_at?: string | null
+          acted_disposition?: string | null
+          action?: string | null
+          block_week?: number | null
+          confidence?: number | null
+          created_at?: string | null
+          drift_score?: number | null
+          goal_ref?: string | null
+          id?: string | null
+          next_session_id?: string | null
+          outcome_note?: string | null
+          owner_user_id?: string | null
+          rx_md_path?: string | null
+          signals_fired?: Json | null
+          snooze_count?: number | null
+          snoozed_until?: string | null
+          source_refs?: Json | null
+          status?: string | null
+          subjective_fit_1_5?: number | null
+          tldr?: string | null
+          trigger_type?: string | null
+        }
+        Update: {
+          acted_at?: string | null
+          acted_disposition?: string | null
+          action?: string | null
+          block_week?: number | null
+          confidence?: number | null
+          created_at?: string | null
+          drift_score?: number | null
+          goal_ref?: string | null
+          id?: string | null
+          next_session_id?: string | null
+          outcome_note?: string | null
+          owner_user_id?: string | null
+          rx_md_path?: string | null
+          signals_fired?: Json | null
+          snooze_count?: number | null
+          snoozed_until?: string | null
+          source_refs?: Json | null
+          status?: string | null
+          subjective_fit_1_5?: number | null
+          tldr?: string | null
+          trigger_type?: string | null
+        }
+        Relationships: []
+      }
+      recommendations_bk_v0_20260515: {
+        Row: {
+          acted_at: string | null
+          action: string | null
+          block_week: number | null
+          confidence: number | null
+          created_at: string | null
+          drift_score: number | null
+          goal_ref: string | null
+          id: string | null
+          outcome_note: string | null
+          owner_user_id: string | null
+          rx_md_path: string | null
+          signals_fired: Json | null
+          source_refs: Json | null
+          status: string | null
+          tldr: string | null
+          trigger_type: string | null
+        }
+        Insert: {
+          acted_at?: string | null
+          action?: string | null
+          block_week?: number | null
+          confidence?: number | null
+          created_at?: string | null
+          drift_score?: number | null
+          goal_ref?: string | null
+          id?: string | null
+          outcome_note?: string | null
+          owner_user_id?: string | null
+          rx_md_path?: string | null
+          signals_fired?: Json | null
+          source_refs?: Json | null
+          status?: string | null
+          tldr?: string | null
+          trigger_type?: string | null
+        }
+        Update: {
+          acted_at?: string | null
+          action?: string | null
+          block_week?: number | null
+          confidence?: number | null
+          created_at?: string | null
+          drift_score?: number | null
+          goal_ref?: string | null
+          id?: string | null
+          outcome_note?: string | null
+          owner_user_id?: string | null
+          rx_md_path?: string | null
+          signals_fired?: Json | null
+          source_refs?: Json | null
+          status?: string | null
+          tldr?: string | null
+          trigger_type?: string | null
+        }
+        Relationships: []
       }
       workout_logs: {
         Row: {
@@ -395,6 +573,13 @@ export type Database = {
             referencedRelation: "plans"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "workout_logs_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "v_drift_signals"
+            referencedColumns: ["plan_id"]
+          },
         ]
       }
       workout_logs_bk_20260515: {
@@ -456,7 +641,116 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_drift_signals: {
+        Row: {
+          avg_load_drop_pct: number | null
+          block_lag_weeks: number | null
+          computed_at: string | null
+          conditioning_minutes_7d: number | null
+          conditioning_target_min: number | null
+          drift_breakdown: Json | null
+          drift_score: number | null
+          facts_json: Json | null
+          gap_since_hard_lower_h: number | null
+          hard_lower_gap_state: string | null
+          last_hard_lower_at: string | null
+          last_recovery_or_cardio_at: string | null
+          last_workout_at: string | null
+          last_workout_day_key: string | null
+          owner_user_id: string | null
+          pace_ratio_7d: number | null
+          plan_block_week: number | null
+          plan_end: string | null
+          plan_goal: string | null
+          plan_id: string | null
+          plan_name: string | null
+          plan_start: string | null
+          recovery_state: string | null
+          rolling_2wk_vibe_energy: number | null
+          rolling_2wk_vibe_sleep: number | null
+          rpe_drift_avg_7d: number | null
+          sessions_14d: number | null
+          sessions_7d: number | null
+          strength_7d: number | null
+          target_sessions_per_week: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plans_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_movement_session_metrics: {
+        Row: {
+          avg_rpe: number | null
+          day_key: string | null
+          has_paused_set: boolean | null
+          has_tempo_set: boolean | null
+          has_unilateral_set: boolean | null
+          is_caution: boolean | null
+          is_finisher: boolean | null
+          is_main: boolean | null
+          log_date: string | null
+          movement_category: string | null
+          movement_name: string | null
+          movement_tags: string[] | null
+          owner_user_id: string | null
+          paused_sets: number | null
+          rpe_drift: number | null
+          session_id: string | null
+          sets_completed: number | null
+          tempo_sets: number | null
+          top_set_weight: number | null
+          working_sets: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workout_logs_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_session_metrics: {
+        Row: {
+          activity_type: string | null
+          avg_actual_rpe: number | null
+          completion_rate: number | null
+          conditioning_minutes: number | null
+          day_key: string | null
+          has_paused: boolean | null
+          has_tempo: boolean | null
+          log_date: string | null
+          owner_user_id: string | null
+          paused_sets: number | null
+          rpe_drift: number | null
+          session_id: string | null
+          session_minutes: number | null
+          sets_abandoned: number | null
+          sets_completed: number | null
+          sets_logged: number | null
+          tempo_sets: number | null
+          total_seconds: number | null
+          unilateral_sets: number | null
+          week_number: number | null
+          working_sets: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workout_logs_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       bump_movement_sub: {
