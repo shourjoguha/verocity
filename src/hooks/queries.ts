@@ -1,5 +1,5 @@
 /** Centralized React Query hooks for all Supabase reads. */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { ParsedPlan, LogDocument } from "@/lib/types";
 
