@@ -16,6 +16,7 @@ import Stats from "./pages/Stats";
 import Library from "./pages/Library";
 import Plan from "./pages/Plan";
 import ActivityLogger from "./pages/ActivityLogger";
+import Recommendations from "./pages/Recommendations";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -45,6 +46,7 @@ function GatedRoutes() {
       <Route path="/calendar" element={<Calendar />} />
       <Route path="/stats" element={<Stats />} />
       <Route path="/library" element={<Library />} />
+      <Route path="/recommendations" element={<Recommendations />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
