@@ -29,7 +29,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Pause, Play, RotateCcw, X, Save, Plus, Replace, Trash2, Group, Ungroup, Settings2, CalendarIcon, Pencil, ArrowRightLeft, ChevronDown, Mic } from "lucide-react";
 import { toast } from "sonner";
 import { LibraryPicker } from "@/components/LibraryPicker";
-import { loadMaxWeightByMovement, prefillWeightsFromMax } from "@/lib/lastPerformance";
+import { loadLastSetByMovement, prefillFromLastSet, prefillItemFromLastSet, type LastSetValues } from "@/lib/lastPerformance";
 import { makeDayKey, weekForDate } from "@/lib/weekPicker";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion, useMotionValue, useTransform, animate, type PanInfo } from "framer-motion";
@@ -151,18 +151,11 @@ export default function Logger() {
     qc.invalidateQueries({ queryKey: ["movementSubs", user.id, planId, dayKey] });
   }
 
-  // Cache of all-time max weight per movement (lowercased name); populated on initial load.
-  const maxByMovRef = useRef<Map<string, number>>(new Map());
-  function seedWeightOnNewItem(item: LogItem) {
-    if (!item.metrics.includes("weight")) return;
-    const max = maxByMovRef.current.get((item.name ?? "").trim().toLowerCase());
-    if (max == null) return;
-    for (const s of item.sets) {
-      if (s.actual.weight == null) {
-        s.actual.weight = max;
-        s.actual.prefilled = true;
-      }
-    }
+  // Cache of "last completed set" per movement name; populated on initial load
+  // and reused when swapping or adding movements mid-session.
+  const lastByMovRef = useRef<Map<string, LastSetValues>>(new Map());
+  function seedNewItem(item: LogItem) {
+    prefillItemFromLastSet(item, lastByMovRef.current);
   }
 
   // Initial load
@@ -173,7 +166,10 @@ export default function Logger() {
       if (logId) {
         const { data } = await supabase.from("workout_logs").select("*").eq("id", logId).maybeSingle();
         if (data) {
-          setDoc(migrateDocument(data.data as unknown as LogDocument));
+          const migrated = migrateDocument(data.data as unknown as LogDocument);
+          const lastByMov = await loadLastSetByMovement(user.id);
+          lastByMovRef.current = lastByMov;
+          setDoc(prefillFromLastSet(migrated, lastByMov));
           setDayKey(data.day_key ?? "");
           setWeekNumber(data.week_number ?? 1);
           setPlanId(data.plan_id);
@@ -210,9 +206,9 @@ export default function Logger() {
 
         if (isCustomMode) {
           const blank = buildBlankDocument();
-          const maxByMov = await loadMaxWeightByMovement(user.id);
-          maxByMovRef.current = maxByMov;
-          setDoc(prefillWeightsFromMax(blank, maxByMov));
+          const lastByMov = await loadLastSetByMovement(user.id);
+          lastByMovRef.current = lastByMov;
+          setDoc(prefillFromLastSet(blank, lastByMov));
           setDayKey("Custom workout");
           setWeekNumber(0);
           setActivityType("strength");
@@ -237,9 +233,9 @@ export default function Logger() {
           const resolvedWeek = week || weekForDate(planRow.start_date ?? null, dateParam2);
           setWeekNumber(resolvedWeek);
           const built = buildLogDocument(plan, planDay, resolvedWeek);
-          const maxByMov = await loadMaxWeightByMovement(user.id);
-          maxByMovRef.current = maxByMov;
-          setDoc(prefillWeightsFromMax(built, maxByMov));
+          const lastByMov = await loadLastSetByMovement(user.id);
+          lastByMovRef.current = lastByMov;
+          setDoc(prefillFromLastSet(built, lastByMov));
           const inferred = appConfig.activity.dayTypeTag(planDay.type);
           setActivityType(inferred);
           setTags([inferred]);
@@ -510,9 +506,9 @@ export default function Logger() {
       const g = s.groups.find((x) => x.id === groupId)!;
       const it = g.items[itemIdx];
       const last = it.sets[it.sets.length - 1];
-      const seedActual: LogSet["actual"] = {};
-      if (it.metrics.includes("rpe")) { seedActual.rpe = appConfig.rpe.default; seedActual.prefilled = true; }
-      it.sets.push({ planned: last?.planned ?? null, actual: seedActual, notations: last?.notations ?? [], restAfterSeconds: it.restBetweenSetsSeconds });
+      it.sets.push({ planned: last?.planned ?? null, actual: {}, notations: last?.notations ?? [], restAfterSeconds: it.restBetweenSetsSeconds });
+      // Autofill the new set from history (if any).
+      prefillItemFromLastSet(it, lastByMovRef.current);
     });
   }
   function removeSet(sectionId: string, groupId: string, itemIdx: number, setIdx: number) {
@@ -528,6 +524,13 @@ export default function Logger() {
       const g = s.groups.find((x) => x.id === groupId)!;
       g.items[itemIdx].restBetweenSetsSeconds = sec;
       for (const st of g.items[itemIdx].sets) st.restAfterSeconds = sec;
+    });
+  }
+  function setRestAfter(sectionId: string, groupId: string, itemIdx: number, setIdx: number, sec: number) {
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId)!;
+      const g = s.groups.find((x) => x.id === groupId)!;
+      g.items[itemIdx].sets[setIdx].restAfterSeconds = sec;
     });
   }
   function setGroupRest(sectionId: string, groupId: string, key: "restAfterRoundSeconds" | "restWithinSeconds", sec: number) {
@@ -604,7 +607,7 @@ export default function Logger() {
       it.metrics = Array.from(set);
       it.primaryMetric = mov.primaryMetric;
       it.restBetweenSetsSeconds = mov.default_rest_seconds || it.restBetweenSetsSeconds;
-      seedWeightOnNewItem(it);
+      seedNewItem(it);
     });
     // Persist substitution memory: only for plan-driven sessions, real swaps,
     // and only when both ids are present.
@@ -641,7 +644,7 @@ export default function Logger() {
         sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
         restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
       };
-      seedWeightOnNewItem(item);
+      seedNewItem(item);
       s.groups.push({
         id: makeId(),
         kind: "single",
@@ -727,7 +730,7 @@ export default function Logger() {
         sets: [{ planned: null, actual: {}, notations: [], restAfterSeconds: mov.default_rest_seconds }],
         restBetweenSetsSeconds: mov.default_rest_seconds || appConfig.timer.defaults.betweenSetsSeconds,
       };
-      seedWeightOnNewItem(item);
+      seedNewItem(item);
       g.items.push(item);
       if (g.kind === "single") {
         g.kind = "superset";
@@ -963,6 +966,7 @@ export default function Logger() {
                         onAddSet={addSet}
                         onRemoveSet={removeSet}
                         onItemRest={setItemRest}
+                        onSetRest={setRestAfter}
                         onGroupRest={setGroupRest}
                         onChangeKind={changeGroupKind}
                         onRemoveItem={removeItem}
@@ -1253,6 +1257,7 @@ function GroupBlock(props: {
   onAddSet: (sectionId: string, groupId: string, itemIdx: number) => void;
   onRemoveSet: (sectionId: string, groupId: string, itemIdx: number, setIdx: number) => void;
   onItemRest: (sectionId: string, groupId: string, itemIdx: number, sec: number) => void;
+  onSetRest: (sectionId: string, groupId: string, itemIdx: number, setIdx: number, sec: number) => void;
   onGroupRest: (sectionId: string, groupId: string, key: "restAfterRoundSeconds" | "restWithinSeconds", sec: number) => void;
   onChangeKind: (sectionId: string, groupId: string, kind: LogGroup["kind"]) => void;
   onRemoveItem: (sectionId: string, groupId: string, itemIdx: number) => void;
@@ -1279,8 +1284,8 @@ function GroupBlock(props: {
         <div className="flex items-center justify-between text-[0.6rem] uppercase tracking-[0.16em] px-1 pb-2">
           <span className="font-bold">{group.kind}</span>
           <div className="flex items-center gap-2">
-            <RestEditor label="Within" seconds={group.restWithinSeconds ?? appConfig.timer.defaults.withinSupersetSeconds} onChange={(s) => props.onGroupRest(section.id, group.id, "restWithinSeconds", s)} onStart={() => props.onStartRest(group.restWithinSeconds ?? appConfig.timer.defaults.withinSupersetSeconds, "Within")} />
-            <RestEditor label="After round" seconds={group.restAfterRoundSeconds ?? appConfig.timer.defaults.afterSupersetSeconds} onChange={(s) => props.onGroupRest(section.id, group.id, "restAfterRoundSeconds", s)} onStart={() => props.onStartRest(group.restAfterRoundSeconds ?? appConfig.timer.defaults.afterSupersetSeconds, "After round")} />
+            <RestEditor label="Within" seconds={group.restWithinSeconds ?? appConfig.timer.defaults.withinSupersetSeconds} onChange={(s) => props.onGroupRest(section.id, group.id, "restWithinSeconds", s)} />
+            <RestEditor label="After round" seconds={group.restAfterRoundSeconds ?? appConfig.timer.defaults.afterSupersetSeconds} onChange={(s) => props.onGroupRest(section.id, group.id, "restAfterRoundSeconds", s)} />
             <button title="Convert to single" onClick={() => props.onChangeKind(section.id, group.id, "single")} className="text-muted-foreground hover:text-foreground"><Ungroup className="h-3.5 w-3.5" /></button>
           </div>
         </div>
@@ -1297,6 +1302,7 @@ function GroupBlock(props: {
           onAddSet={() => props.onAddSet(section.id, group.id, idx)}
           onRemoveSet={(setIdx) => props.onRemoveSet(section.id, group.id, idx, setIdx)}
           onItemRest={(sec) => props.onItemRest(section.id, group.id, idx, sec)}
+          onSetRest={(setIdx, sec) => props.onSetRest(section.id, group.id, idx, setIdx, sec)}
           onRemoveItem={() => props.onRemoveItem(section.id, group.id, idx)}
           onMoveItem={(dstSectionId) => props.onMoveItem(section.id, group.id, idx, dstSectionId)}
           onSwap={() => props.onSwap(group.id, idx)}
@@ -1333,6 +1339,7 @@ function ItemRow(props: {
   onAddSet: () => void;
   onRemoveSet: (setIdx: number) => void;
   onItemRest: (sec: number) => void;
+  onSetRest: (setIdx: number, sec: number) => void;
   onRemoveItem: () => void;
   onMoveItem: (dstSectionId: string) => void;
   onSwap: () => void;
@@ -1395,16 +1402,16 @@ function ItemRow(props: {
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={props.onSwap}
-            className="touch-target text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss"
+            className="h-11 w-11 inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss"
             title="Swap movement"
             aria-label="Swap movement"
           >
-            <Replace className="h-3.5 w-3.5" />
+            <Replace className="h-4 w-4" />
           </button>
-          <RestEditor label="Rest" seconds={item.restBetweenSetsSeconds} onChange={props.onItemRest} onStart={() => onStartRest(item.restBetweenSetsSeconds, item.name)} compact />
+          <RestEditor label="Rest" seconds={item.restBetweenSetsSeconds} onChange={props.onItemRest} compact />
           <Popover>
             <PopoverTrigger asChild>
-              <button className="touch-target text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss" title="Options" aria-label="Options"><Settings2 className="h-3.5 w-3.5" /></button>
+              <button className="h-11 w-11 inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors duration-slow ease-swiss" title="Options" aria-label="Options"><Settings2 className="h-4 w-4" /></button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-52 p-1">
               <button onClick={props.onSwap} className="w-full text-left px-3 py-2 text-xs uppercase tracking-[0.1em] font-bold hover:bg-secondary flex items-center gap-2"><Replace className="h-3 w-3" /> Swap</button>
@@ -1456,7 +1463,7 @@ function ItemRow(props: {
                     onChange={(m, v) => props.onSetActual(i, m, v)}
                     onToggleComplete={() => props.onToggleComplete(i)}
                     onRemove={() => props.onRemoveSet(i)}
-                    onStartRest={() => onStartRest(s.restAfterSeconds ?? item.restBetweenSetsSeconds, `${item.name} · set ${i + 1}`)}
+                    onSetRest={(sec) => props.onSetRest(i, sec)}
                     onCloneForward={() => props.onCloneForward(i)}
                     onOpenWeightWheel={() => props.onOpenWeightWheel(i, s.actual.weight ?? null)}
                     voiceDeniedRef={props.voiceDeniedRef}
@@ -1495,13 +1502,13 @@ function ItemCompleteCheckbox({ allComplete, noneComplete, onClick }: { allCompl
   return (
     <button
       onClick={onClick}
-      className="touch-target relative"
+      className="h-11 w-11 inline-flex items-center justify-center relative"
       title={allComplete ? "Mark all incomplete" : "Mark all complete"}
       aria-label="Toggle all sets complete"
     >
       <span
         className={cn(
-          "h-5 w-5 border flex items-center justify-center transition-colors",
+          "h-4 w-4 border flex items-center justify-center transition-colors",
           allComplete ? "bg-foreground border-foreground text-background" : "hairline",
         )}
       >
@@ -1731,7 +1738,7 @@ function SetRow(props: {
   onChange: (m: Metric, v: number | null) => void;
   onToggleComplete: () => void;
   onRemove: () => void;
-  onStartRest: () => void;
+  onSetRest: (sec: number) => void;
   onCloneForward: () => void;
   onOpenWeightWheel: () => void;
   voiceDeniedRef: React.MutableRefObject<boolean>;
@@ -1816,11 +1823,11 @@ function SetRow(props: {
       onDragEnd={onDragEnd}
     >
       <td
-        className="font-mono text-xs select-none cursor-pointer"
+        className="font-mono text-xs select-none cursor-pointer min-h-[44px] min-w-[44px] align-middle"
         title={set.actual.completed ? "Long-press to copy forward" : undefined}
         {...(set.actual.completed ? cloneLp : {})}
       >
-        <span className="inline-flex items-center gap-0.5">
+        <span className="inline-flex items-center justify-center gap-0.5 min-h-[44px] min-w-[44px]">
           {idx + 1}
           {set.actual.completed && <ChevronDown className="h-3 w-3 opacity-30" />}
         </span>
@@ -1892,28 +1899,25 @@ function SetRow(props: {
           {props.isActive && voice.supported && !props.voiceDeniedRef.current && (
             <motion.button
               onClick={handleVoice}
-              className="text-muted-foreground hover:text-foreground"
+              className="h-11 w-11 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
               animate={voice.listening ? { scale: [1, 1.15, 1] } : undefined}
               transition={voice.listening ? { repeat: Infinity, duration: 1 } : undefined}
               aria-label="Voice input"
               title='Say "120 by 5"'
             >
-              <Mic className="h-3.5 w-3.5" />
+              <Mic className="h-4 w-4" />
             </motion.button>
           )}
-          <button
-            onClick={props.onStartRest}
-            className="text-[0.6rem] uppercase tracking-[0.12em] border hairline px-1.5 py-0.5 hover:bg-secondary transition-colors duration-slow ease-swiss"
-            title="Start rest"
-          >
-            rest
-          </button>
+          <RestSecondsInput
+            seconds={set.restAfterSeconds ?? props.item.restBetweenSetsSeconds}
+            onCommit={(sec) => props.onSetRest(sec)}
+          />
         </div>
       </td>
       <td className="text-right relative">
         <button
           onClick={props.onToggleComplete}
-          className="touch-target-sm"
+          className="h-11 w-11 inline-flex items-center justify-center"
           aria-label="Toggle complete"
         >
           <span className={cn("h-4 w-4 border block", set.actual.completed ? "bg-foreground border-foreground" : "hairline")} />
@@ -1942,8 +1946,60 @@ function SetRow(props: {
   );
 }
 
-function RestEditor(props: { label: string; seconds: number; onChange: (s: number) => void; onStart: () => void; compact?: boolean }) {
-  const { label, seconds, onChange, onStart, compact } = props;
+function RestEditor(props: { label: string; seconds: number; onChange: (s: number) => void; compact?: boolean }) {
+  return _RestEditorImpl(props);
+}
+
+/** Inline editable per-set rest seconds. Numeric, 0–600s, commits on blur / Enter. */
+function RestSecondsInput({ seconds, onCommit }: { seconds: number | null | undefined; onCommit: (sec: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState<string>(seconds == null ? "" : String(seconds));
+  useEffect(() => { if (!editing) setValue(seconds == null ? "" : String(seconds)); }, [seconds, editing]);
+  function commit() {
+    setEditing(false);
+    if (value === "") { onCommit(0); return; }
+    const n = Math.max(0, Math.min(600, Math.round(Number(value) || 0)));
+    onCommit(n);
+  }
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="font-mono text-[0.65rem] border hairline px-1.5 py-0.5 min-h-[28px] min-w-[44px] hover:bg-secondary transition-colors duration-slow ease-swiss"
+        title="Edit rest"
+        aria-label="Edit rest seconds"
+      >
+        {seconds == null ? "—s" : `${seconds}s`}
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex items-center">
+      <input
+        autoFocus
+        type="number"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        min={0}
+        max={600}
+        step={1}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.currentTarget.blur(); }
+          if (e.key === "Escape") { setValue(seconds == null ? "" : String(seconds)); setEditing(false); }
+        }}
+        className="w-12 text-right bg-transparent border-b hairline focus:border-foreground focus:outline-none font-mono text-[0.7rem] no-zoom-input py-0.5"
+      />
+      <span className="text-[0.6rem] text-muted-foreground ml-0.5">s</span>
+    </span>
+  );
+}
+
+function _RestEditorImpl(props: { label: string; seconds: number; onChange: (s: number) => void; compact?: boolean }) {
+  const { label, seconds, onChange, compact } = props;
   return (
     <div className="flex items-center gap-1">
       <Popover>
@@ -1969,12 +2025,12 @@ function RestEditor(props: { label: string; seconds: number; onChange: (s: numbe
           />
         </PopoverContent>
       </Popover>
-      <button onClick={onStart} className="border hairline px-1.5 py-0.5 text-[0.6rem] uppercase tracking-[0.12em] hover:bg-foreground hover:text-background transition-colors duration-slow ease-swiss">go</button>
     </div>
   );
 }
 
 function RestOverlay(props: { targetSeconds: number; label: string; onClose: () => void }) {
+  // kept for cloneForward arm-rest behavior
   const cd = useCountdown(props.targetSeconds);
   useEffect(() => { cd.start(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   useEffect(() => {

@@ -8,27 +8,14 @@ const newId = () => `g_${Date.now().toString(36)}_${(gid++).toString(36)}`;
 
 function plannedToLogSets(planned: PlannedSet | null, defaultRest: number, metrics: Metric[]): LogSet[] {
   if (!planned) {
-    const actual: LogSet["actual"] = {};
-    if (metrics.includes("rpe")) { actual.rpe = appConfig.rpe.default; actual.prefilled = true; }
-    return [{ planned: null, actual, notations: [], restAfterSeconds: defaultRest }];
+    return [{ planned: null, actual: {}, notations: [], restAfterSeconds: defaultRest }];
   }
   const count = planned.sets ?? 1;
   const out: LogSet[] = [];
   for (let i = 0; i < count; i++) {
-    const actual: LogSet["actual"] = {};
-    let seeded = false;
-    if (metrics.includes("reps") && typeof planned.reps === "number") {
-      actual.reps = planned.reps;
-      seeded = true;
-    }
-    if (metrics.includes("rpe")) {
-      actual.rpe = planned.rpe ?? appConfig.rpe.default;
-      seeded = true;
-    }
-    if (seeded) actual.prefilled = true;
     out.push({
       planned,
-      actual,
+      actual: {},
       notations: planned.notations,
       restAfterSeconds: defaultRest,
     });
