@@ -506,9 +506,9 @@ export default function Logger() {
       const g = s.groups.find((x) => x.id === groupId)!;
       const it = g.items[itemIdx];
       const last = it.sets[it.sets.length - 1];
-      const seedActual: LogSet["actual"] = {};
-      if (it.metrics.includes("rpe")) { seedActual.rpe = appConfig.rpe.default; seedActual.prefilled = true; }
-      it.sets.push({ planned: last?.planned ?? null, actual: seedActual, notations: last?.notations ?? [], restAfterSeconds: it.restBetweenSetsSeconds });
+      it.sets.push({ planned: last?.planned ?? null, actual: {}, notations: last?.notations ?? [], restAfterSeconds: it.restBetweenSetsSeconds });
+      // Autofill the new set from history (if any).
+      prefillItemFromLastSet(it, lastByMovRef.current);
     });
   }
   function removeSet(sectionId: string, groupId: string, itemIdx: number, setIdx: number) {
@@ -524,6 +524,13 @@ export default function Logger() {
       const g = s.groups.find((x) => x.id === groupId)!;
       g.items[itemIdx].restBetweenSetsSeconds = sec;
       for (const st of g.items[itemIdx].sets) st.restAfterSeconds = sec;
+    });
+  }
+  function setRestAfter(sectionId: string, groupId: string, itemIdx: number, setIdx: number, sec: number) {
+    updateDoc((d) => {
+      const s = d.sections.find((x) => x.id === sectionId)!;
+      const g = s.groups.find((x) => x.id === groupId)!;
+      g.items[itemIdx].sets[setIdx].restAfterSeconds = sec;
     });
   }
   function setGroupRest(sectionId: string, groupId: string, key: "restAfterRoundSeconds" | "restWithinSeconds", sec: number) {
