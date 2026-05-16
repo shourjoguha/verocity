@@ -1339,6 +1339,7 @@ function ItemRow(props: {
   onAddSet: () => void;
   onRemoveSet: (setIdx: number) => void;
   onItemRest: (sec: number) => void;
+  onSetRest: (setIdx: number, sec: number) => void;
   onRemoveItem: () => void;
   onMoveItem: (dstSectionId: string) => void;
   onSwap: () => void;
@@ -1462,7 +1463,7 @@ function ItemRow(props: {
                     onChange={(m, v) => props.onSetActual(i, m, v)}
                     onToggleComplete={() => props.onToggleComplete(i)}
                     onRemove={() => props.onRemoveSet(i)}
-                    onStartRest={() => onStartRest(s.restAfterSeconds ?? item.restBetweenSetsSeconds, `${item.name} · set ${i + 1}`)}
+                    onSetRest={(sec) => props.onSetRest(i, sec)}
                     onCloneForward={() => props.onCloneForward(i)}
                     onOpenWeightWheel={() => props.onOpenWeightWheel(i, s.actual.weight ?? null)}
                     voiceDeniedRef={props.voiceDeniedRef}
