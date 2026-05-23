@@ -35,8 +35,11 @@ A strength/training logger rebuilt on **Astro + React islands**, **Supabase**
   interaction is required (`client:load`/`client:visible`). The Logger is one large
   self-contained island — avoid many tiny islands.
 - **RLS is the security boundary.** The anon key is public; never rely on the UI to
-  enforce read-only. Authenticated users write only their own rows
-  (`owner_user_id = auth.uid()`); anon gets SELECT-only on the showcase profile.
+  enforce read-only. **Private by default:** authenticated users read AND write only
+  their own rows (`owner_user_id = auth.uid()`); the shared movement library
+  (`owner_user_id IS NULL`) is the only ambient cross-user read. Anon gets
+  SELECT-only on the showcase profile. Cross-user sharing is explicit via
+  read-only share tokens served by the `share-read` Edge Function.
 - **Never ship the service-role key to the client.** It lives only in Edge
   Functions / Railway env.
 - **Preserve the JSONB contracts** (`plans.parsed` = ParsedPlan,

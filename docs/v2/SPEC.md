@@ -43,7 +43,11 @@ original's full feature inventory is captured in §9; v2 enhancements in §10.
 | Frontend | **Astro + React islands.** Static-first HTML; React islands only for interactive screens (Logger, Stats, pickers). |
 | Data/Auth/Realtime | **Supabase** (Postgres + Auth + RLS + Realtime + Edge Functions). |
 | Heavy jobs | **Railway**, only where Supabase Edge Functions fall short (e.g. future scheduled "coach" engine). Not needed for the core app. |
-| Auth | **Real per-profile auth** (Supabase Auth) + a **public read-only role** for the one showcase profile. RLS enforces read-only server-side. |
+| Auth | **Real per-profile auth** (Supabase Auth) + a **public read-only role** for the showcase profile. RLS enforces read-only server-side. |
+| Visibility | **Private by default** — each profile reads only its own data. Cross-user access is explicit, via **share links** (read-only tokens). |
+| View-only | **Both**: one always-on **public showcase** profile *and* **per-profile share links** for any profile/plan/log. |
+| Signup | **Invite codes** — new profiles require a valid code (caps at <100). |
+| Visual | **Keep & elevate** the Swiss-minimalist identity (no fresh redesign). |
 | AI | **Deferred to later phases.** Build the core logging app first; plan-parsing and the recommendations "coach" come later (see §12). |
 | Hosting | Astro static/edge output on **Vercel**; Supabase managed; Railway optional. |
 
@@ -104,44 +108,62 @@ shared key plus a name picker, with fully-open RLS).
 2. **Anonymous / public (view-only)** — uses the Supabase **anon** key. RLS grants
    it `SELECT` **only** on the designated showcase profile's rows, and **no**
    insert/update/delete anywhere.
+3. **Share-link holder** — anyone presenting a valid, non-expired read-only token
+   (see §7). Gets read-only access to exactly the shared resource.
 
-### Signup gating (caps at < 100)
-- Signup requires an **invite code** (repurpose the old `app_settings` global-key
-  idea as an invite gate). Without a valid code, no new profile is created.
-- Alternatively: admin-only profile creation. (Open Q — see §15.)
+### Signup gating (caps at < 100) — LOCKED: invite codes
+- Signup requires a valid **invite code** (an `invites` row; repurposes the old
+  `app_settings` global-key idea). Without a valid code, no profile is created.
+  Code redemption happens in a signup Edge Function (service-role), not the client.
 
-### Visibility policy (proposed)
-- **Reads (authenticated):** communal — any authenticated user may `SELECT` all
-  profiles' plans/movements/logs. This preserves the original's cross-user
-  features (adopt another user's plan, shared movement library, owner names).
-- **Writes (authenticated):** only rows where `owner_user_id = auth.uid()`.
-  → Real per-profile protection: you can no longer edit someone else's data
-  (a genuine fix vs. today's open writes).
+### Visibility policy — LOCKED: private by default
+- **Reads (authenticated):** **own rows only** (`owner_user_id = auth.uid()`).
+  No implicit cross-user visibility.
+- **Writes (authenticated):** own rows only. → Real per-profile protection.
+- **Cross-user access is explicit**, granted through **share links** (§7), never
+  ambient. This replaces the original's communal model.
+- **Shared movement library** (`movements` with `owner_user_id IS NULL`) remains
+  readable by all authenticated users — it's curated reference data, not personal.
 - **Anonymous:** `SELECT` restricted to `owner_user_id = <SHOWCASE_PROFILE_ID>`;
   everything else denied.
 
-> If communal reads are undesirable, we tighten authenticated `SELECT` to own-rows
-> + explicitly shared plans. Flagged in Open Questions.
+> Consequence: the original's "adopt another user's plan" feature now flows through
+> an explicit share (or an opt-in `is_public` plan), not ambient browsing — see §10.
 
 ---
 
-## 7. View-Only / Edge Strategy
+## 7. View-Only / Edge Strategy  (LOCKED: both)
 
-Goal: a new visitor can browse **everything** on one designated profile (its plan,
-calendar, stats, session detail) but cannot edit or write.
+Two read-only surfaces:
 
-- **Enforcement:** anon Supabase key + SELECT-only RLS scoped to the showcase
-  profile id. Even a crafted request cannot write — the database refuses it.
-- **Routing:** dedicated public routes, e.g. `/showcase/*` (or a separate
-  subdomain), that never mount edit affordances and use the anon client.
-- **Rendering (default):** static Astro pages + client-side read-only fetch →
-  zero Vercel compute, fast, cacheable.
-- **Optional edge SSR:** if we want crawlable/shareable showcase pages, render
-  those specific routes on Vercel Edge with cache headers. Costs some edge
-  invocations; decide per §15.
-- **Snapshot vs live:** default **live** (reads current DB through the read-only
-  key). A periodic static snapshot is possible if we want truly zero external
-  reads, but live is simpler and the read-only key is safe to expose.
+### A. Public showcase (always-on, one designated profile)
+A new visitor can browse **everything** on the showcase profile (plan, calendar,
+stats, session detail) but cannot edit or write.
+- **Enforcement:** anon Supabase key + SELECT-only RLS scoped to
+  `owner_user_id = <SHOWCASE_PROFILE_ID>`. The DB refuses any write.
+- **Routing:** dedicated public routes, e.g. `/showcase/*` (or a subdomain), that
+  never mount edit affordances and use the anon client.
+- **Rendering (default):** static Astro shell + client-side read-only fetch → zero
+  Vercel compute, fast, cacheable. Optional Vercel Edge SSR per route if SEO /
+  social previews matter (open Q §15).
+- **Live**, reading current DB via the read-only key (safe to expose; RLS is the
+  boundary).
+
+### B. Per-profile share links (any profile, opt-in)
+Any authenticated profile can mint a **read-only share token** for their whole
+profile, a single plan, or a single log.
+- **Model:** a `shares` row holds `token_hash`, `owner_user_id`, `scope`
+  (`profile|plan|log`), `resource_id`, `expires_at`, `revoked`.
+- **Read path:** `/share/:token` → a Supabase **Edge Function** (`share-read`)
+  validates the token (hash + not expired/revoked) and returns the scoped data via
+  **read-only SELECTs** (service-role, but the function only ever reads). Keeps
+  Vercel uninvolved; share traffic is low so Supabase function cost is negligible.
+  - *Alternative considered:* RLS using a request-header GUC + `SECURITY DEFINER`
+    check. More moving parts; the edge function is simpler and equally safe.
+- **Read-only guarantee:** holders never receive a writable key; the function
+  exposes no mutations. Revocation = flip `revoked` / set `expires_at`.
+- **This token also powers "adopt a plan"** (§10): adoption = open a shared plan,
+  then copy it into your own account.
 
 ---
 
@@ -169,6 +191,9 @@ Port the original schema, plus auth-backed ownership. Postgres on Supabase.
   unused until the AI phase.**
 - **`invites`** *(new)* — invite codes for signup gating: `code_hash, used_by,
   used_at, expires_at`.
+- **`shares`** *(new)* — read-only share tokens: `id, token_hash, owner_user_id,
+  scope (profile|plan|log), resource_id (nullable), label, created_at, expires_at,
+  revoked boolean`. Backs §7B share links and plan adoption.
 
 ### JSONB documents (unchanged contract)
 - `plans.parsed` → `ParsedPlan` (title, dates, blocks, weeklyTemplate, days[] with
@@ -180,20 +205,31 @@ Port the original schema, plus auth-backed ownership. Postgres on Supabase.
 Keeping these JSONB contracts means the parsing/logging logic ports with minimal
 change.
 
-### RLS sketch
+### RLS sketch (private-by-default)
 ```sql
 -- profiles
-select: authenticated → true ; anon → id = :SHOWCASE_ID
+select: authenticated → id = auth.uid()      -- own only
+        anon          → id = :SHOWCASE_ID
 insert/update: id = auth.uid()
 
--- movements / plans / workout_logs / movement_subs / recommendations
-select: authenticated → true
-        anon → owner_user_id = :SHOWCASE_ID
-insert/update/delete: owner_user_id = auth.uid()   -- (anon: none)
+-- plans / workout_logs / movement_subs / recommendations
+select: authenticated → owner_user_id = auth.uid()         -- own only
+        anon          → owner_user_id = :SHOWCASE_ID
+        (plans may also expose owner_user_id-agnostic rows where is_public = true)
+insert/update/delete: owner_user_id = auth.uid()           -- anon: none
 
--- invites
-select/update: service-role / signup edge function only
+-- movements
+select: authenticated → owner_user_id = auth.uid() OR owner_user_id IS NULL  -- own + shared library
+        anon          → owner_user_id = :SHOWCASE_ID OR owner_user_id IS NULL
+insert/update/delete: owner_user_id = auth.uid()
+
+-- invites, shares
+select/update: service-role only (signup + share-read edge functions)
+-- shares: owners may INSERT/UPDATE(revoke) their own rows from the client
+shares insert/update: owner_user_id = auth.uid()
 ```
+Share-link reads (§7B) bypass ambient RLS by going through the `share-read` Edge
+Function, which validates the token and performs scoped read-only queries.
 
 > Note: the original migrations included a `claude_ro` DB role granted write
 > access and an external process writing `recommendations` directly. v2 should
@@ -251,12 +287,15 @@ Single source of truth for blocks/sections, metrics, RPE, timers, activity tags
 ## 10. Enhancements ("new and enhanced")
 
 1. **Real auth & per-profile data protection** (§6) — fixes the original's open-write model.
-2. **Public view-only showcase** (§7) — net-new.
-3. **Better visuals** (§11) — elevated motion, depth, data-viz polish, Astro View Transitions.
-4. **Performance** — static-first delivery, smaller JS (islands only), faster cold loads than the Vite SPA.
-5. **Invite-gated signup** — caps profiles, removes the shared-password friction.
-6. **SEO-able showcase** (optional) — edge-rendered public pages.
-7. *(Candidates for discussion)* multi-unit (lb/kg), export (CSV/JSON), richer
+2. **Private-by-default + explicit sharing** (§6) — your data is yours; sharing is a deliberate act.
+3. **Public showcase + per-profile share links** (§7) — net-new.
+4. **Plan adoption via sharing** — open a shared/public plan, copy it into your
+   account (replaces the original's ambient "browse everyone's plans"). Optional
+   `is_public` plan flag enables a lightweight adoption marketplace.
+5. **Better visuals** (§11) — elevated motion, depth, data-viz polish, Astro View Transitions.
+6. **Performance** — static-first delivery, smaller JS (islands only), faster cold loads than the Vite SPA.
+7. **Invite-gated signup** — caps profiles, removes the shared-password friction.
+8. *(Candidates for discussion)* multi-unit (lb/kg), export (CSV/JSON), richer
    plan templates, PR celebrations, deeper Stats.
 
 ---
@@ -337,21 +376,21 @@ Each phase is independently shippable; the showcase is usable after Phase 1.
 
 ## 15. Open Questions / Decisions Needed
 
+**Resolved (this round):** view-only = both public showcase + per-profile share
+links · reads = private by default · signup = invite codes · visuals = keep &
+elevate current identity.
+
+**Still open:**
 1. **tradingV CLAUDE.md (blocker for one deliverable).** Paste items 1–6, or grant
    access to that repo, so I can port them into the new `CLAUDE.md`.
-2. **New repo name & owner.** e.g. `verocity` (new), `verocity-next`, or a new
-   name? Same GitHub owner (`shourjoguha`)?
-3. **Showcase profile:** is it a single fixed profile, or should *any* profile be
-   shareable via a read-only link? Live data or periodic snapshot?
-4. **Showcase rendering:** static + client-fetch (zero Vercel compute, no SEO) vs.
-   edge SSR (SEO/social previews, some edge invocations)?
-5. **Authenticated visibility:** communal reads (preserve adopt-plan / shared
-   library, like today) vs. private-by-default with explicit sharing?
-6. **Signup control:** invite codes vs. admin-only creation?
-7. **Visual direction:** keep the existing Swiss identity (recommended) vs. a fresh
-   look?
-8. **PWA/offline:** how important is offline logging? (Affects island/state design.)
-9. **Units:** kg-only (as today) or kg/lb toggle?
+2. **New repo name & owner.** e.g. `verocity-next` under `shourjoguha`, or a new name?
+3. **Showcase rendering:** static + client-fetch (zero Vercel compute, no SEO) vs.
+   edge SSR for the public showcase (SEO/social previews, some edge invocations)?
+4. **Plan adoption:** share-link-only, or also a `is_public` plan flag for a small
+   adoption marketplace?
+5. **PWA/offline:** how important is offline logging? (Affects island/state design.)
+6. **Units:** kg-only (as today) or kg/lb toggle?
+7. **Auth method:** magic-link, email+password, or both for the per-profile login?
 
 ---
 
@@ -361,10 +400,12 @@ Each phase is independently shippable; the showcase is usable after Phase 1.
   as a single large island it's fine, but we must keep its state self-contained and
   avoid sprinkling many tiny islands (hydration cost). Mitigation: one Logger
   island, `client:load`, with internal routing/state.
-- **Communal reads vs. privacy.** Defaulting to communal matches the original but
-  exposes all profiles to any authenticated user. Confirm this is desired (§15.5).
-- **Read-only key exposure.** The anon key is public by design; safety rests
-  entirely on RLS. RLS policies need tests (a denied-write test suite).
+- **Private-by-default migration of "adopt plan."** The original let users browse
+  everyone's plans; v2 routes this through explicit shares / `is_public`. Make sure
+  the adoption UX stays easy despite the privacy default.
+- **Read-only key & share tokens.** The anon key is public by design; safety rests
+  entirely on RLS, and share tokens on the `share-read` function. Both need a
+  **denied-write / denied-cross-read test suite**.
 - **Realtime cost.** Supabase realtime on `workout_logs` is fine at <100 profiles.
 - **Original artifacts to drop:** the `claude_ro` write-granted DB role and the
   external direct-DB recommendation writer — replace with service-role edge/Railway.
