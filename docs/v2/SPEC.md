@@ -412,4 +412,3 @@ routing / hard-rules / numbered-principles template** (see `docs/CLAUDE.md`).
   external direct-DB recommendation writer — replace with service-role edge/Railway.
 - **Secrets.** Service-role key never ships to the client; only the anon key and
   authed-session keys reach the browser.
-```
