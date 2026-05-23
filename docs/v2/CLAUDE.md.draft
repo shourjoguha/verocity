@@ -1,0 +1,53 @@
+# CLAUDE.md — Verocity v2
+
+> Draft for the new repo. Sections 1–6 are a **placeholder** to be replaced with
+> the corresponding sections ported from the tradingV `CLAUDE.md` (not available
+> in the current environment — paste them in or grant repo access).
+
+## 1–6. (PORT FROM tradingV CLAUDE.md)
+
+<!--
+BLOCKED: tradingV CLAUDE.md is not present in this environment.
+Paste tradingV items 1–6 here verbatim (or adapt), e.g.:
+  1. ...
+  2. ...
+  3. ...
+  4. ...
+  5. ...
+  6. ...
+-->
+
+---
+
+## v2-specific guidance (Verocity)
+
+### What this project is
+A strength/training logger rebuilt on **Astro + React islands**, **Supabase**
+(Postgres + Auth + RLS + Realtime + Edge Functions), deployed on **Vercel**
+(static/edge), with **Railway** reserved for future heavy/scheduled jobs. See
+`docs/SPEC.md` for the full spec.
+
+### Architecture rules (do not violate)
+- **Keep Vercel light.** The browser talks directly to Supabase. Do not add Vercel
+  serverless/edge functions on the authenticated hot path — Vercel mostly serves
+  static assets. AI/heavy work goes to Supabase Edge Functions or Railway.
+- **Islands, not a SPA.** Use Astro static pages; hydrate React only where
+  interaction is required (`client:load`/`client:visible`). The Logger is one large
+  self-contained island — avoid many tiny islands.
+- **RLS is the security boundary.** The anon key is public; never rely on the UI to
+  enforce read-only. Authenticated users write only their own rows
+  (`owner_user_id = auth.uid()`); anon gets SELECT-only on the showcase profile.
+- **Never ship the service-role key to the client.** It lives only in Edge
+  Functions / Railway env.
+- **Preserve the JSONB contracts** (`plans.parsed` = ParsedPlan,
+  `workout_logs.data` = LogDocument) so logic ports cleanly.
+
+### Conventions
+- Domain config in a single `app.config.ts` (ported) — no hardcoded constants in
+  components.
+- HSL design tokens only; no raw colors in components. Swiss-minimalist identity
+  (Clash Display + Satoshi, hairlines, tabular numbers, sharp corners, dark mode).
+- TypeScript strict; types in `lib/types.ts`.
+
+### Build / test / deploy
+- (fill in once Phase 0 scaffolding lands)
