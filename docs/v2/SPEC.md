@@ -356,7 +356,7 @@ Each phase is independently shippable; the showcase is usable after Phase 1.
 ```
 / (new repo)
 ├─ .claude/                 # agents, commands, settings for this project
-├─ CLAUDE.md                # project guide (items 1–6 ported from tradingV) + v2 specifics
+├─ CLAUDE.md                # routing + hard rules + numbered principles (see docs/CLAUDE.md.draft)
 ├─ docs/
 │  ├─ SPEC.md               # this document
 │  └─ ROADMAP.md            # living phase tracker
@@ -365,10 +365,12 @@ Each phase is independently shippable; the showcase is usable after Phase 1.
 └─ ...
 ```
 
-- **CLAUDE.md** — port items 1–6 from the tradingV CLAUDE.md (**blocked**: that
-  repo isn't available here — see §15), then append v2-specific guidance
-  (architecture, resource budget, RLS rules, "never expose service-role to the
-  client", etc.).
+- **CLAUDE.md** — follows the agreed template: a **Routing** table → project
+  **Hard rules** (RLS is the boundary, private-by-default, never expose the
+  service-role key, keep Vercel light, islands-not-SPA, preserve JSONB contracts,
+  design-tokens-only, invite-gated, AI deferred) → four numbered working principles
+  (Think Before Coding · Simplicity First · Surgical Changes · Goal-Driven
+  Execution). Drafted now at `docs/CLAUDE.md.draft`.
 - **`.claude/`** — project agents/commands (e.g. a "port a page" workflow), shared
   settings, allowed-tools.
 
@@ -376,21 +378,20 @@ Each phase is independently shippable; the showcase is usable after Phase 1.
 
 ## 15. Open Questions / Decisions Needed
 
-**Resolved (this round):** view-only = both public showcase + per-profile share
+**Resolved:** view-only = both public showcase + per-profile share
 links · reads = private by default · signup = invite codes · visuals = keep &
-elevate current identity.
+elevate current identity · **repo = `shourjoguha/verocity-Multi`** (build happens
+in a new web session scoped to it) · **CLAUDE.md = modeled on the provided
+routing / hard-rules / numbered-principles template** (see `docs/CLAUDE.md`).
 
 **Still open:**
-1. **tradingV CLAUDE.md (blocker for one deliverable).** Paste items 1–6, or grant
-   access to that repo, so I can port them into the new `CLAUDE.md`.
-2. **New repo name & owner.** e.g. `verocity-next` under `shourjoguha`, or a new name?
-3. **Showcase rendering:** static + client-fetch (zero Vercel compute, no SEO) vs.
+1. **Showcase rendering:** static + client-fetch (zero Vercel compute, no SEO) vs.
    edge SSR for the public showcase (SEO/social previews, some edge invocations)?
-4. **Plan adoption:** share-link-only, or also a `is_public` plan flag for a small
+2. **Plan adoption:** share-link-only, or also a `is_public` plan flag for a small
    adoption marketplace?
-5. **PWA/offline:** how important is offline logging? (Affects island/state design.)
-6. **Units:** kg-only (as today) or kg/lb toggle?
-7. **Auth method:** magic-link, email+password, or both for the per-profile login?
+3. **PWA/offline:** how important is offline logging? (Affects island/state design.)
+4. **Units:** kg-only (as today) or kg/lb toggle?
+5. **Auth method:** magic-link, email+password, or both for the per-profile login?
 
 ---
 
